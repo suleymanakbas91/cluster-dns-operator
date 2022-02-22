@@ -16,6 +16,8 @@ require (
 	sigs.k8s.io/controller-runtime v0.11.0
 )
 
+replace github.com/openshift/api => github.com/brandisher/api v0.0.0-20220202183529-090cac988158
+
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.1 // indirect
