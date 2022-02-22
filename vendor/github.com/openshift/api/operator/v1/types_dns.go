@@ -1,6 +1,7 @@
 package v1
 
 import (
+	v1 "github.com/openshift/api/config/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -170,6 +171,37 @@ type ForwardPlugin struct {
 	// +optional
 	// +kubebuilder:default:="Random"
 	Policy ForwardingPolicy `json:"policy,omitempty"`
+
+	// transport allows cluster administrators to opt-in to using a DNS-over-TLS
+	// connection between cluster DNS and an upstream resolver(s). Configuring
+	// TLS as the transport at this level without configuring a CABundle will
+	// result in the system certificates being used to verify the serving
+	// certificate of the upstream resolver(s).
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=tls;cleartext
+	// +kubebuiler:default=cleartext
+	Transport string `json:"transport,omitempty"`
+
+	// caBundle references a ConfigMap that must contain either a single
+	// CA Certificate or a CA Bundle (in the case of multiple upstreams signed
+	// by different CAs). This allows cluster administrators to provide their
+	// own CA or CA bundle for validating the certificate of upstream resolvers.
+	//
+	// 1. The configmap must contain a `cabundle.crt` key
+	// 2. The value must be a PEM encoded certificate or bundle.
+	// 3. The administrator must create this configmap in the openshift-config namespace.
+	//
+	// +optional
+	// +kubebuilder:validation:Optional
+	CABundle v1.ConfigMapNameReference `json:"caBundle,omitempty"`
+
+	// serverName is the upstream server to connect to for DNS resolution.
+	// This is required when Transport is set to "tls"
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z0-9-\p{L}]){2,63})$`
+	ServerName string `json:"serverName,omitempty"`
 }
 
 // UpstreamResolvers defines a schema for configuring the CoreDNS forward plugin in the
@@ -203,6 +235,37 @@ type UpstreamResolvers struct {
 	// +optional
 	// +kubebuilder:default="Sequential"
 	Policy ForwardingPolicy `json:"policy,omitempty"`
+
+	// transport allows cluster administrators to opt-in to using a DNS-over-TLS
+	// connection between cluster DNS and an upstream resolver(s). Configuring
+	// TLS as the transport at this level without configuring a CABundle will
+	// result in the system certificates being used to verify the serving
+	// certificate of the upstream resolver(s).
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=tls;cleartext
+	// +kubebuiler:default=cleartext
+	Transport string `json:"transport,omitempty"`
+
+	// caBundle references a ConfigMap that must contain either a single
+	// CA Certificate or a CA Bundle (in the case of multiple upstreams signed
+	// by different CAs). This allows cluster administrators to provide their
+	// own CA or CA bundle for validating the certificate of upstream resolvers.
+	//
+	// 1. The configmap must contain a `cabundle.crt` key
+	// 2. The value must be a PEM encoded certificate or bundle.
+	// 3. The administrator must create this configmap in the openshift-config namespace.
+	//
+	// +optional
+	// +kubebuilder:validation:Optional
+	CABundle v1.ConfigMapNameReference `json:"caBundle,omitempty"`
+
+	// serverName is the upstream server to connect to for DNS resolution.
+	// This is required when Transport is set to "tls"
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z0-9-\p{L}]){2,63})$`
+	ServerName string `json:"serverName,omitempty"`
 }
 
 // Upstream can either be of type SystemResolvConf, or of type Network.
