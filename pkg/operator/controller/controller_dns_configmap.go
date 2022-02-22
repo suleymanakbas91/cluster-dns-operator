@@ -136,7 +136,7 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.Con
 			},
 		},
 		Policy:    operatorv1.SequentialForwardingPolicy,
-		Transport: operatorv1.ClearTextTransport,
+		Transport: operatorv1.CleartextTransport,
 	}
 
 	if len(dns.Spec.UpstreamResolvers.Upstreams) > 0 {
@@ -166,7 +166,7 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.Con
 		if dns.Spec.UpstreamResolvers.ServerName != "" { //TODO: print a warning about the ignored TLS configuration
 			upstreamResolvers.Transport = operatorv1.TLSTransport
 			upstreamResolvers.ServerName = dns.Spec.UpstreamResolvers.ServerName
-			if dns.Spec.UpstreamResolvers.CABundle != nil {
+			if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
 				upstreamResolvers.CABundle = dns.Spec.UpstreamResolvers.CABundle
 			}
 		}

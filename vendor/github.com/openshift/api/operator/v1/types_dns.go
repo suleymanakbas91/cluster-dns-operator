@@ -131,6 +131,19 @@ type Server struct {
 	ForwardPlugin ForwardPlugin `json:"forwardPlugin"`
 }
 
+// DNSTransport is indicates what type of connection should be used
+// +kubebuilder:validation:Enum=tls;cleartext
+type DNSTransport string
+
+const (
+	// TLSTransport indicates that TLS should be used for the connection
+	TLSTransport DNSTransport = "tls"
+
+	// CleartextTransport indicates that no encryption should be used for
+	// the connection.
+	CleartextTransport DNSTransport = "cleartext"
+)
+
 // ForwardingPolicy is the policy to use when forwarding DNS requests.
 // +kubebuilder:validation:Enum=Random;RoundRobin;Sequential
 type ForwardingPolicy string
@@ -179,9 +192,8 @@ type ForwardPlugin struct {
 	// certificate of the upstream resolver(s).
 	//
 	// +optional
-	// +kubebuilder:validation:Enum=tls;cleartext
-	// +kubebuiler:default=cleartext
-	Transport string `json:"transport,omitempty"`
+	// +kubebuiler:default:="cleartext"
+	Transport DNSTransport `json:"transport,omitempty"`
 
 	// caBundle references a ConfigMap that must contain either a single
 	// CA Certificate or a CA Bundle (in the case of multiple upstreams signed
@@ -243,9 +255,8 @@ type UpstreamResolvers struct {
 	// certificate of the upstream resolver(s).
 	//
 	// +optional
-	// +kubebuilder:validation:Enum=tls;cleartext
-	// +kubebuiler:default=cleartext
-	Transport string `json:"transport,omitempty"`
+	// +kubebuiler:default:="cleartext"
+	Transport DNSTransport `json:"transport,omitempty"`
 
 	// caBundle references a ConfigMap that must contain either a single
 	// CA Certificate or a CA Bundle (in the case of multiple upstreams signed
