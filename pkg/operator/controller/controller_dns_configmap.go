@@ -64,10 +64,19 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     }
     prometheus 127.0.0.1:9153
 	{{- with .UpstreamResolvers }}
-    forward .{{range .Upstreams}} {{UpstreamResolver .}}{{end}} {
+    {{- if eq .Transport "tls" }}
+    forward .{{range .Upstreams}} tls://{{UpstreamResolver .}}{{end}} {
+        {{- with .CABundle }}
+        tls caBundle.crt
+        {{- end}}
+        tls_servername {{.ServerName}}
         policy {{ CoreDNSForwardingPolicy .Policy }}
     }
-	{{- end}}
+    {{- else}}
+    forward .{{range .Upstreams}} {{UpstreamResolver .}}{{end}} {
+        policy {{ CoreDNSForwardingPolicy .Policy }}
+    {{- end}}
+    {{- end}}
     cache 900 {
         denial 9984 30
     }
@@ -126,7 +135,8 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.Con
 				Type: operatorv1.SystemResolveConfType,
 			},
 		},
-		Policy: operatorv1.SequentialForwardingPolicy,
+		Policy:    operatorv1.SequentialForwardingPolicy,
+		Transport: operatorv1.ClearTextTransport,
 	}
 
 	if len(dns.Spec.UpstreamResolvers.Upstreams) > 0 {
@@ -150,6 +160,16 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.Con
 
 	if dns.Spec.UpstreamResolvers.Policy != "" {
 		upstreamResolvers.Policy = dns.Spec.UpstreamResolvers.Policy
+	}
+
+	if dns.Spec.UpstreamResolvers.Transport == operatorv1.TLSTransport {
+		if dns.Spec.UpstreamResolvers.ServerName != "" { //TODO: print a warning about the ignored TLS configuration
+			upstreamResolvers.Transport = operatorv1.TLSTransport
+			upstreamResolvers.ServerName = dns.Spec.UpstreamResolvers.ServerName
+			if dns.Spec.UpstreamResolvers.CABundle != nil {
+				upstreamResolvers.CABundle = dns.Spec.UpstreamResolvers.CABundle
+			}
+		}
 	}
 
 	corefileParameters := struct {
