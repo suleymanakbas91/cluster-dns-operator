@@ -514,6 +514,7 @@ foo.com:5353 {
     prometheus 127.0.0.1:9153
     forward . /etc/resolv.conf tls://9.8.7.6 tls://[1001:AAAA:BBBB:CCCC::2222]:53 tls://2.3.4.5:5353 tls://127.0.0.53 {
         tls_servername example.com
+        tls
         policy round_robin
     }
     cache 900 {
@@ -666,8 +667,8 @@ foo.com:5353 {
     }
     prometheus 127.0.0.1:9153
     forward . tls://9.8.7.6 tls://[1001:AAAA:BBBB:CCCC::2222]:53 {
-        tls caBundle.crt
         tls_servername example.com
+        tls caBundle.crt
         policy round_robin
     }
     cache 900 {

@@ -65,11 +65,13 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     prometheus 127.0.0.1:9153
 	{{- with .UpstreamResolvers }}
     forward .{{range .Upstreams}} {{UpstreamResolver . $.UpstreamResolvers.Transport}}{{end}} {
-        {{- with .CABundle.Name }}
-        tls caBundle.crt
-        {{- end}}
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
+        {{- if ne .CABundle.Name "" }}
+        tls caBundle.crt
+        {{- else}}
+        tls
+        {{- end}}
         {{- end}}
         policy {{ CoreDNSForwardingPolicy .Policy }}
     }
