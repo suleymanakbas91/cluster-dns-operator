@@ -75,6 +75,7 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     {{- else}}
     forward .{{range .Upstreams}} {{UpstreamResolver .}}{{end}} {
         policy {{ CoreDNSForwardingPolicy .Policy }}
+    }
     {{- end}}
     {{- end}}
     cache 900 {
