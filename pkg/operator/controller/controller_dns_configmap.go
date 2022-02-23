@@ -64,19 +64,15 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     }
     prometheus 127.0.0.1:9153
 	{{- with .UpstreamResolvers }}
-    {{- if eq .Transport "tls" }}
-    forward .{{range .Upstreams}} tls://{{UpstreamResolver .}}{{end}} {
-        {{- with .CABundle }}
+    forward .{{range .Upstreams}} {{UpstreamResolver . $.UpstreamResolvers.Transport}}{{end}} {
+        {{- with .CABundle.Name }}
         tls caBundle.crt
         {{- end}}
+        {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
+        {{- end}}
         policy {{ CoreDNSForwardingPolicy .Policy }}
     }
-    {{- else}}
-    forward .{{range .Upstreams}} {{UpstreamResolver .}}{{end}} {
-        policy {{ CoreDNSForwardingPolicy .Policy }}
-    }
-    {{- end}}
     {{- end}}
     cache 900 {
         denial 9984 30
@@ -233,16 +229,21 @@ func corefileChanged(current, expected *corev1.ConfigMap) (bool, *corev1.ConfigM
 	return true, updated
 }
 
-func coreDNSResolver(upstream operatorv1.Upstream) (string, error) {
+func coreDNSResolver(upstream operatorv1.Upstream, transport operatorv1.DNSTransport) (string, error) {
 	if upstream.Type == operatorv1.NetworkResolverType {
 		if upstream.Address == "" {
 			return "", errInvalidNetworkUpstream
 		}
+		var address string
 		if upstream.Port > 0 {
-			return net.JoinHostPort(strings.ToUpper(upstream.Address), fmt.Sprintf("%d", upstream.Port)), nil
+			address = net.JoinHostPort(strings.ToUpper(upstream.Address), fmt.Sprintf("%d", upstream.Port))
 		} else {
-			return strings.ToUpper(upstream.Address), nil
+			address = strings.ToUpper(upstream.Address)
 		}
+		if transport == operatorv1.TLSTransport {
+			address = fmt.Sprintf("tls://%s", address)
+		}
+		return address, nil
 	}
 	return resolvConf, nil
 }

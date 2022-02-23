@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	v1 "github.com/openshift/api/config/v1"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -424,6 +425,249 @@ foo.com:5353 {
     }
     prometheus 127.0.0.1:9153
     forward . 1.2.3.4 9.8.7.6 [1001:AAAA:BBBB:CCCC::2222]:53 2.3.4.5:5353 127.0.0.53 {
+        policy round_robin
+    }
+    cache 900 {
+        denial 9984 30
+    }
+    reload
+}
+`,
+		},
+		{
+			name: "CR of TLS-enabled upstreamResolvers should return a coreFile containing upstreams using TLS except for system resolve config",
+			dns: &operatorv1.DNS{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: DefaultDNSController,
+				},
+				Spec: operatorv1.DNSSpec{
+					UpstreamResolvers: operatorv1.UpstreamResolvers{
+						//{"/etc/resolv.conf", "9.8.7.6", "6.4.3.2:53", "2.3.4.5:5353", "127.0.0.53"},
+						Upstreams: []operatorv1.Upstream{
+							{
+								Type: operatorv1.SystemResolveConfType,
+							},
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "9.8.7.6",
+							},
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "1001:AAAA:bbbb:cCcC::2222",
+								Port:    53,
+							},
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "2.3.4.5",
+								Port:    5353,
+							},
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "127.0.0.53",
+							},
+						},
+						Policy:     operatorv1.RoundRobinForwardingPolicy,
+						Transport:  operatorv1.TLSTransport,
+						ServerName: "example.com",
+					},
+					Servers: []operatorv1.Server{
+						{
+							Name:  "foo",
+							Zones: []string{"foo.com"},
+							ForwardPlugin: operatorv1.ForwardPlugin{
+								Upstreams: []string{"1.1.1.1", "2.2.2.2:5353"},
+								Policy:    operatorv1.RoundRobinForwardingPolicy,
+							},
+						},
+					},
+				},
+			},
+			expectedCoreFile: `# foo
+foo.com:5353 {
+    prometheus 127.0.0.1:9153
+    forward . 1.1.1.1 2.2.2.2:5353 {
+        policy round_robin
+    }
+    errors
+    log . {
+        class error
+    }
+    bufsize 512
+    cache 900 {
+        denial 9984 30
+    }
+}
+.:5353 {
+    bufsize 512
+    errors
+    log . {
+        class error
+    }
+    health {
+        lameduck 20s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+    }
+    prometheus 127.0.0.1:9153
+    forward . /etc/resolv.conf tls://9.8.7.6 tls://[1001:AAAA:BBBB:CCCC::2222]:53 tls://2.3.4.5:5353 tls://127.0.0.53 {
+        tls_servername example.com
+        policy round_robin
+    }
+    cache 900 {
+        denial 9984 30
+    }
+    reload
+}
+`,
+		},
+		{
+			name: "CR with upstreamResolvers using TLS, but without a server name should return a coreFile containing upstreams without TLS",
+			dns: &operatorv1.DNS{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: DefaultDNSController,
+				},
+				Spec: operatorv1.DNSSpec{
+					UpstreamResolvers: operatorv1.UpstreamResolvers{
+						Upstreams: []operatorv1.Upstream{
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "9.8.7.6",
+							},
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "1001:AAAA:bbbb:cCcC::2222",
+								Port:    53,
+							},
+						},
+						Policy:    operatorv1.RoundRobinForwardingPolicy,
+						Transport: operatorv1.TLSTransport,
+					},
+					Servers: []operatorv1.Server{
+						{
+							Name:  "foo",
+							Zones: []string{"foo.com"},
+							ForwardPlugin: operatorv1.ForwardPlugin{
+								Upstreams: []string{"1.1.1.1", "2.2.2.2:5353"},
+								Policy:    operatorv1.RoundRobinForwardingPolicy,
+							},
+						},
+					},
+				},
+			},
+			expectedCoreFile: `# foo
+foo.com:5353 {
+    prometheus 127.0.0.1:9153
+    forward . 1.1.1.1 2.2.2.2:5353 {
+        policy round_robin
+    }
+    errors
+    log . {
+        class error
+    }
+    bufsize 512
+    cache 900 {
+        denial 9984 30
+    }
+}
+.:5353 {
+    bufsize 512
+    errors
+    log . {
+        class error
+    }
+    health {
+        lameduck 20s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+    }
+    prometheus 127.0.0.1:9153
+    forward . 9.8.7.6 [1001:AAAA:BBBB:CCCC::2222]:53 {
+        policy round_robin
+    }
+    cache 900 {
+        denial 9984 30
+    }
+    reload
+}
+`,
+		},
+		{
+			name: "CR with upstreamResolvers using TLS defining a CA bundle should return a coreFile containing upstreams with TLS and CA bundle",
+			dns: &operatorv1.DNS{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: DefaultDNSController,
+				},
+				Spec: operatorv1.DNSSpec{
+					UpstreamResolvers: operatorv1.UpstreamResolvers{
+						Upstreams: []operatorv1.Upstream{
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "9.8.7.6",
+							},
+							{
+								Type:    operatorv1.NetworkResolverType,
+								Address: "1001:AAAA:bbbb:cCcC::2222",
+								Port:    53,
+							},
+						},
+						Policy:     operatorv1.RoundRobinForwardingPolicy,
+						Transport:  operatorv1.TLSTransport,
+						ServerName: "example.com",
+						CABundle: v1.ConfigMapNameReference{
+							Name: "ca-bundle-config",
+						},
+					},
+					Servers: []operatorv1.Server{
+						{
+							Name:  "foo",
+							Zones: []string{"foo.com"},
+							ForwardPlugin: operatorv1.ForwardPlugin{
+								Upstreams: []string{"1.1.1.1", "2.2.2.2:5353"},
+								Policy:    operatorv1.RoundRobinForwardingPolicy,
+							},
+						},
+					},
+				},
+			},
+			expectedCoreFile: `# foo
+foo.com:5353 {
+    prometheus 127.0.0.1:9153
+    forward . 1.1.1.1 2.2.2.2:5353 {
+        policy round_robin
+    }
+    errors
+    log . {
+        class error
+    }
+    bufsize 512
+    cache 900 {
+        denial 9984 30
+    }
+}
+.:5353 {
+    bufsize 512
+    errors
+    log . {
+        class error
+    }
+    health {
+        lameduck 20s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+    }
+    prometheus 127.0.0.1:9153
+    forward . tls://9.8.7.6 tls://[1001:AAAA:BBBB:CCCC::2222]:53 {
+        tls caBundle.crt
+        tls_servername example.com
         policy round_robin
     }
     cache 900 {
