@@ -92,6 +92,14 @@ func DNSConfigMapName(dns *operatorv1.DNS) types.NamespacedName {
 	}
 }
 
+// ClientCAConfigMapName returns the namespaced name for the dns client ca config map.
+func ClientCAConfigMapName(dns *operatorv1.DNS) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: "openshift-dns",
+		Name:      "dns-client-ca-" + dns.Name,
+	}
+}
+
 func DNSServiceMonitorName(dns *operatorv1.DNS) types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: "openshift-dns",

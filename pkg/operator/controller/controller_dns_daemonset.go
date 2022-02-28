@@ -111,6 +111,121 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 			daemonset.Spec.Template.Spec.Containers[i].Image = kubeRBACProxyImage
 		}
 	}
+
+	/*if len(ci.Spec.ClientTLS.ClientCertificatePolicy) != 0 {
+		var clientAuthPolicy string
+		switch ci.Spec.ClientTLS.ClientCertificatePolicy {
+		case operatorv1.ClientCertificatePolicyRequired:
+			clientAuthPolicy = "required"
+		case operatorv1.ClientCertificatePolicyOptional:
+			clientAuthPolicy = "optional"
+		}
+		env = append(env,
+			corev1.EnvVar{Name: RouterClientAuthPolicy, Value: clientAuthPolicy},
+		)
+
+		if len(ci.Spec.ClientTLS.ClientCA.Name) != 0 {
+			clientCAConfigmapName := controller.ClientCAConfigMapName(ci)
+			clientCAVolumeName := "client-ca"
+			clientCAVolumeMountPath := "/etc/pki/tls/client-ca"
+			clientCABundleFilename := "ca-bundle.pem"
+			clientCAVolume := corev1.Volume{
+				Name: clientCAVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: clientCAConfigmapName.Name,
+						},
+						Items: []corev1.KeyToPath{
+							{
+								Key:  clientCABundleFilename,
+								Path: clientCABundleFilename,
+							},
+						},
+					},
+				},
+			}
+			clientCAVolumeMount := corev1.VolumeMount{
+				Name:      clientCAVolumeName,
+				MountPath: clientCAVolumeMountPath,
+				ReadOnly:  true,
+			}
+			volumes = append(volumes, clientCAVolume)
+			routerVolumeMounts = append(routerVolumeMounts, clientCAVolumeMount)
+
+			clientAuthCAPath := filepath.Join(clientCAVolumeMount.MountPath, clientCABundleFilename)
+			env = append(env, corev1.EnvVar{Name: RouterClientAuthCA, Value: clientAuthCAPath})
+
+			if haveClientCAConfigmap {
+				// If any certificates in the client CA bundle
+				// specify any CRL distribution points, then we
+				// need to configure a configmap volume.  The
+				// crl controller is responsible for managing
+				// the configmap.
+				var clientCAData []byte
+				if v, ok := clientCAConfigmap.Data[clientCABundleFilename]; !ok {
+					return nil, fmt.Errorf("client CA configmap %s/%s is missing %q", clientCAConfigmap.Namespace, clientCAConfigmap.Name, clientCABundleFilename)
+				} else {
+					clientCAData = []byte(v)
+				}
+				var someClientCAHasCRL bool
+				for len(clientCAData) > 0 {
+					block, data := pem.Decode(clientCAData)
+					if block == nil {
+						break
+					}
+					clientCAData = data
+					cert, err := x509.ParseCertificate(block.Bytes)
+					if err != nil {
+						return nil, fmt.Errorf("client CA configmap %s/%s has an invalid certificate: %w", clientCAConfigmap.Namespace, clientCAConfigmap.Name, err)
+					}
+					if len(cert.CRLDistributionPoints) != 0 {
+						someClientCAHasCRL = true
+						break
+					}
+				}
+				if someClientCAHasCRL {
+					clientCACRLSecretName := controller.CRLConfigMapName(ci)
+					clientCACRLVolumeName := "client-ca-crl"
+					clientCACRLVolumeMountPath := "/etc/pki/tls/client-ca-crl"
+					clientCACRLFilename := "crl.pem"
+					clientCACRLVolume := corev1.Volume{
+						Name: clientCACRLVolumeName,
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: clientCACRLSecretName.Name,
+								},
+								Items: []corev1.KeyToPath{
+									{
+										Key:  clientCACRLFilename,
+										Path: clientCACRLFilename,
+									},
+								},
+							},
+						},
+					}
+					clientCACRLVolumeMount := corev1.VolumeMount{
+						Name:      clientCACRLVolumeName,
+						MountPath: clientCACRLVolumeMountPath,
+						ReadOnly:  true,
+					}
+					volumes = append(volumes, clientCACRLVolume)
+					routerVolumeMounts = append(routerVolumeMounts, clientCACRLVolumeMount)
+
+					clientAuthCRLPath := filepath.Join(clientCACRLVolumeMount.MountPath, clientCACRLFilename)
+					env = append(env, corev1.EnvVar{Name: RouterClientAuthCRL, Value: clientAuthCRLPath})
+				}
+			}
+
+			if len(ci.Spec.ClientTLS.AllowedSubjectPatterns) != 0 {
+				pattern := "(?:" + strings.Join(ci.Spec.ClientTLS.AllowedSubjectPatterns, "|") + ")"
+				env = append(env, corev1.EnvVar{Name: RouterClientAuthFilter, Value: pattern})
+			}
+		}
+
+	}*/
+
 	return daemonset, nil
 }
 
