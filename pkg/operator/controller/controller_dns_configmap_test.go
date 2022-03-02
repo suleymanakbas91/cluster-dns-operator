@@ -314,6 +314,97 @@ foo.com:5353 {
     reload
 }
 `
+	//	Check the expected DNS-over-TLS settings
+	dnsToCheckForwardPluginTLS := &operatorv1.DNS{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DefaultDNSController,
+		},
+		Spec: operatorv1.DNSSpec{
+			Servers: []operatorv1.Server{
+				{
+					Name:  "foo",
+					Zones: []string{"foo.com"},
+					ForwardPlugin: operatorv1.ForwardPlugin{
+						Upstreams:  []string{"1.1.1.1", "2.2.2.2:5353"},
+						ServerName: "dns.foo.com",
+						Transport:  operatorv1.TLSTransport,
+						Policy:     operatorv1.RoundRobinForwardingPolicy,
+					},
+				},
+				{
+					Name:  "bar",
+					Zones: []string{"bar.com"},
+					ForwardPlugin: operatorv1.ForwardPlugin{
+						Upstreams:  []string{"1.1.1.1", "2.2.2.2:5353"},
+						ServerName: "dns.bar.com",
+						Transport:  operatorv1.TLSTransport,
+						CABundle: v1.ConfigMapNameReference{
+							Name: "cacerts",
+						},
+						Policy: operatorv1.RoundRobinForwardingPolicy,
+					},
+				},
+			},
+		},
+	}
+	expectedCorefileToCheckIfForwardPluginTLS := `# foo
+		foo.com:5353 {
+		    prometheus 127.0.0.1:9153
+		    forward . 1.1.1.1 2.2.2.2:5353 {
+				tls_servername dns.foo.com
+				tls
+		        policy round_robin
+		    }
+		    errors
+            log . {
+                class error
+            }
+		    bufsize 512
+		    cache 900 {
+		        denial 9984 30
+		    }
+		}
+		# bar
+		bar.com:5353 {
+		    prometheus 127.0.0.1:9153
+		    forward . 1.1.1.1 2.2.2.2:5353 {
+				tls_servername dns.bar.com
+				tls caBundle.crt
+		        policy round_robin
+		    }
+		    errors
+            log . {
+                class error
+            }
+		    bufsize 512
+		    cache 900 {
+		        denial 9984 30
+		    }
+		}
+		.:5353 {
+		    bufsize 512
+		    errors
+            log . {
+                class denial error
+            }
+		    health {
+		        lameduck 20s
+		    }
+		    ready
+		    kubernetes cluster.local in-addr.arpa ip6.arpa {
+		        pods insecure
+		        fallthrough in-addr.arpa ip6.arpa
+		    }
+		    prometheus 127.0.0.1:9153
+		    forward . /etc/resolv.conf {
+		        policy sequential
+		    }
+		    cache 900 {
+		        denial 9984 30
+		    }
+		    reload
+		}
+		`
 
 	if cm, err := desiredDNSConfigMap(dns, clusterDomain); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
@@ -337,6 +428,12 @@ foo.com:5353 {
 		t.Errorf("invalid dns configmap: %v", err)
 	} else if cmToCheckTraceLogLevel.Data["Corefile"] == expectedCorefileToCheckIfTraceLogLevelIsSet {
 		t.Errorf("unexpected Corefile; got:\n%s\nexpected:\n%s\n", cmToCheckTraceLogLevel.Data["Corefile"], expectedCorefileToCheckIfTraceLogLevelIsSet)
+	}
+
+	if cmToCheckForwardPluginTLS, err := desiredDNSConfigMap(dnsToCheckForwardPluginTLS, clusterDomain); err != nil {
+		t.Errorf("invalid dns configmap: %v", err)
+	} else if cmToCheckForwardPluginTLS.Data["Corefile"] == expectedCorefileToCheckIfForwardPluginTLS {
+		t.Errorf("unexpected Corefile; got:\n%s\nexpected:\n%s\n", cmToCheckForwardPluginTLS.Data["Corefile"], expectedCorefileToCheckIfForwardPluginTLS)
 	}
 }
 
