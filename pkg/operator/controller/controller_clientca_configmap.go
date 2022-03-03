@@ -86,6 +86,8 @@ func desiredClientCAConfigMap(dns *operatorv1.DNS, haveSource bool, sourceConfig
 		},
 		Data: sourceConfigmap.Data,
 	}
+	cm.SetOwnerReferences([]metav1.OwnerReference{dnsOwnerRef(dns)})
+
 	return true, &cm, nil
 }
 
