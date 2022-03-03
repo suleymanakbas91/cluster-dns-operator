@@ -27,6 +27,7 @@ const resolvConf = "/etc/resolv.conf"
 const defaultDNSPort = 53
 
 var errInvalidNetworkUpstream = fmt.Errorf("The address field is mandatory for upstream of type Network, but was not provided")
+var errTransportTLSConfiguredWithoutServerName = fmt.Errorf("The ServerName field is mandatory when configuring tls as the DNS Transport")
 var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.FuncMap{
 	"CoreDNSForwardingPolicy": coreDNSPolicy, "UpstreamResolver": coreDNSResolver,
 }).Parse(`{{range .Servers -}}
@@ -134,6 +135,13 @@ func (r *reconciler) currentDNSConfigMap(dns *operatorv1.DNS) (bool, *corev1.Con
 func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.ConfigMap, error) {
 	if len(clusterDomain) == 0 {
 		clusterDomain = "cluster.local"
+	}
+
+	// Ensure that Transport: tls cannot be configured without a ServerName
+	for _, server := range dns.Spec.Servers {
+		if server.ForwardPlugin.Transport == operatorv1.TLSTransport && server.ForwardPlugin.ServerName == "" {
+			return nil, errTransportTLSConfiguredWithoutServerName
+		}
 	}
 
 	upstreamResolvers := operatorv1.UpstreamResolvers{

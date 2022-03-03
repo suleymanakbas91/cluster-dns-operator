@@ -1424,6 +1424,33 @@ foo.com:5353 {
 	}
 }
 
+func TestCannotConfigureForwardPluginTransportTLSWithoutServerName(t *testing.T) {
+	dns := &operatorv1.DNS{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DefaultDNSController,
+		},
+		Spec: operatorv1.DNSSpec{
+			Servers: []operatorv1.Server{
+				{
+					Name:  "foo",
+					Zones: []string{"foo.com"},
+					ForwardPlugin: operatorv1.ForwardPlugin{
+						Upstreams: []string{"1.1.1.1", "2.2.2.2:5353"},
+						Transport: operatorv1.TLSTransport,
+						Policy:    operatorv1.RoundRobinForwardingPolicy,
+					},
+				},
+			},
+		},
+	}
+
+	_, err := desiredDNSConfigMap(dns, "cluster.local")
+
+	if !errors.Is(err, errTransportTLSConfiguredWithoutServerName) {
+		t.Errorf("Unexpected error occurred: %v", err)
+	}
+}
+
 // loadTestCorefile looks in the default directory of ./test_corefiles for a file matching the name argument
 // and returns the file contents as a string.
 func loadTestCorefile(name string) (string, error) {
