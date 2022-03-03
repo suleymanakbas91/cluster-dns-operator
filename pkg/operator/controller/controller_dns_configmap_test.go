@@ -54,90 +54,8 @@ func TestDesiredDNSConfigmap(t *testing.T) {
 			},
 		},
 	}
-	expectedCorefile := `# foo
-foo.com:5353 {
-    prometheus 127.0.0.1:9153
-    forward . 1.1.1.1 2.2.2.2:5353 {
-        policy round_robin
-    }
-    errors
-    log . {
-        class error
-    }
-    bufsize 512
-    cache 900 {
-        denial 9984 30
-    }
-}
-# bar
-bar.com:5353 example.com:5353 {
-    prometheus 127.0.0.1:9153
-    forward . 3.3.3.3 {
-        policy random
-    }
-    errors
-    log . {
-        class error
-    }
-    bufsize 512
-    cache 900 {
-        denial 9984 30
-    }
-}
-# fizz
-fizz.com:5353 {
-    prometheus 127.0.0.1:9153
-    forward . 5.5.5.5 6.6.6.6 {
-        policy sequential
-    }
-    errors
-    log . {
-        class error
-    }
-    bufsize 512
-    cache 900 {
-        denial 9984 30
-    }
-}
-# buzz
-buzz.com:5353 example.buzz.com:5353 {
-    prometheus 127.0.0.1:9153
-    forward . 4.4.4.4 {
-        policy random
-    }
-    errors
-    log . {
-        class error
-    }
-    bufsize 512
-    cache 900 {
-        denial 9984 30
-    }
-}
-.:5353 {
-    bufsize 512
-    errors
-    log . {
-        class error
-    }
-    health {
-        lameduck 20s
-    }
-    ready
-    kubernetes cluster.local in-addr.arpa ip6.arpa {
-        pods insecure
-        fallthrough in-addr.arpa ip6.arpa
-    }
-    prometheus 127.0.0.1:9153
-    forward . /etc/resolv.conf {
-        policy sequential
-    }
-    cache 900 {
-        denial 9984 30
-    }
-    reload
-}
-`
+	expectedCorefile, _ := loadTestCorefile("default_corefile")
+
 	////////// Check if Normal Log Level is Set ////////////////
 
 	dnsToCheckNormalLogLevel := &operatorv1.DNS{
@@ -158,45 +76,7 @@ buzz.com:5353 example.buzz.com:5353 {
 			LogLevel: operatorv1.DNSLogLevelNormal,
 		},
 	}
-	expectedCorefileToCheckIfNormaLogLevelIsSet := `# foo
-foo.com:5353 {
-    prometheus 127.0.0.1:9153
-    forward . 1.1.1.1 2.2.2.2:5353 {
-        policy round_robin
-    }
-    errors
-    log . {
-        class error
-    }
-    bufsize 512
-    cache 900 {
-        denial 9984 30
-    }
-}
-.:5353 {
-    bufsize 512
-    errors
-    log . {
-        class error
-    }
-    health {
-        lameduck 20s
-    }
-    ready
-    kubernetes cluster.local in-addr.arpa ip6.arpa {
-        pods insecure
-        fallthrough in-addr.arpa ip6.arpa
-    }
-    prometheus 127.0.0.1:9153
-    forward . /etc/resolv.conf {
-        policy sequential
-    }
-    cache 900 {
-        denial 9984 30
-    }
-    reload
-}
-`
+	expectedCorefileToCheckIfNormaLogLevelIsSet, _ := loadTestCorefile("normal_loglevel")
 
 	//// Check if Debug Level is set //////////////////
 
@@ -218,45 +98,8 @@ foo.com:5353 {
 			LogLevel: operatorv1.DNSLogLevelDebug,
 		},
 	}
-	expectedCorefileToCheckIfDebugLogLevelIsSet := `# foo
-		foo.com:5353 {
-		    prometheus 127.0.0.1:9153
-		    forward . 1.1.1.1 2.2.2.2:5353 {
-		        policy round_robin
-		    }
-		    errors
-            log . {
-                class denial error
-            }
-		    bufsize 512
-		    cache 900 {
-		        denial 9984 30
-		    }
-		}
-		.:5353 {
-		    bufsize 512
-		    errors
-            log . {
-                class denial error
-            }
-		    health {
-		        lameduck 20s
-		    }
-		    ready
-		    kubernetes cluster.local in-addr.arpa ip6.arpa {
-		        pods insecure
-		        fallthrough in-addr.arpa ip6.arpa
-		    }
-		    prometheus 127.0.0.1:9153
-		    forward . /etc/resolv.conf {
-		        policy sequential
-		    }
-		    cache 900 {
-		        denial 9984 30
-		    }
-		    reload
-		}
-		`
+	expectedCorefileToCheckIfDebugLogLevelIsSet, _ := loadTestCorefile("debug_loglevel")
+
 	//// Check if Trace Level is set //////////////////
 	dnsToCheckTraceLogLevel := &operatorv1.DNS{
 		ObjectMeta: metav1.ObjectMeta{
@@ -276,45 +119,8 @@ foo.com:5353 {
 			LogLevel: operatorv1.DNSLogLevelDebug,
 		},
 	}
-	expectedCorefileToCheckIfTraceLogLevelIsSet := `# foo
-foo.com:5353 {
-    prometheus 127.0.0.1:9153
-    forward . 1.1.1.1 2.2.2.2:5353 {
-        policy round_robin
-    }
-    errors
-    log . {
-        class all
-    }
-    bufsize 512
-    cache 900 {
-        denial 9984 30
-    }
-}
-.:5353 {
-    bufsize 512
-    errors
-    log . {
-        class all
-    }
-    health {
-        lameduck 20s
-    }
-    ready
-    kubernetes cluster.local in-addr.arpa ip6.arpa {
-        pods insecure
-        fallthrough in-addr.arpa ip6.arpa
-    }
-    prometheus 127.0.0.1:9153
-    forward . /etc/resolv.conf {
-        policy sequential
-    }
-    cache 900 {
-        denial 9984 30
-    }
-    reload
-}
-`
+	expectedCorefileToCheckIfTraceLogLevelIsSet, _ := loadTestCorefile("trace_logevel")
+
 	//	Check the expected DNS-over-TLS settings
 	dnsToCheckForwardPluginTLS := &operatorv1.DNS{
 		ObjectMeta: metav1.ObjectMeta{
