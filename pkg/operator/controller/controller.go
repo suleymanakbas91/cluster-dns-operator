@@ -29,7 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
@@ -44,7 +43,7 @@ const (
 
 	controllerName  = "dns_controller"
 	SourceNamespace = "openshift-config"
-	TargetNamespace = "openshift-dns"
+	//TargetNamespace = "openshift-dns"
 )
 
 // New creates the operator controller from configuration. This is the
@@ -75,75 +74,75 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 		return nil, err
 	}
 
-	// Index DNSs by spec.upstreamresolvers.cabundle.name so that we
-	// can look up the DNS when the configmap is changed.
-	const clientCAUserConfigmapIndexFieldName = "clientCAUserConfigmapName"
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&operatorv1.DNS{},
-		clientCAUserConfigmapIndexFieldName,
-		func(o client.Object) []string {
-			dns := o.(*operatorv1.DNS)
-			if len(dns.Spec.UpstreamResolvers.CABundle.Name) == 0 {
-				return []string{}
-			}
-			return []string{dns.Spec.UpstreamResolvers.CABundle.Name}
-		},
-	); err != nil {
-		return nil, fmt.Errorf("failed to create index for user-managed client CA configmaps: %w", err)
-	}
+	/*	// Index DNSs by spec.upstreamresolvers.cabundle.name so that we
+		// can look up the DNS when the configmap is changed.
+		const clientCAUserConfigmapIndexFieldName = "clientCAUserConfigmapName"
+		if err := mgr.GetFieldIndexer().IndexField(
+			context.Background(),
+			&operatorv1.DNS{},
+			clientCAUserConfigmapIndexFieldName,
+			func(o client.Object) []string {
+				dns := o.(*operatorv1.DNS)
+				if len(dns.Spec.UpstreamResolvers.CABundle.Name) == 0 {
+					return []string{}
+				}
+				return []string{dns.Spec.UpstreamResolvers.CABundle.Name}
+			},
+		); err != nil {
+			return nil, fmt.Errorf("failed to create index for user-managed client CA configmaps: %w", err)
+		}
 
-	// Index DNSs by their corresponding operator-managed
-	// client CA configmaps so that we can look up the DNS
-	// when the configmap is changed.
-	const clientCAOperatorConfigmapIndexFieldName = "clientCAOperatorConfigmapName"
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&operatorv1.DNS{},
-		clientCAOperatorConfigmapIndexFieldName,
-		func(o client.Object) []string {
-			dns := o.(*operatorv1.DNS)
-			return []string{ClientCAConfigMapName(dns).Name}
-		},
-	); err != nil {
-		return nil, fmt.Errorf("failed to create index for operator-managed client CA configmaps: %w", err)
-	}
+		// Index DNSs by their corresponding operator-managed
+		// client CA configmaps so that we can look up the DNS
+		// when the configmap is changed.
+		const clientCAOperatorConfigmapIndexFieldName = "clientCAOperatorConfigmapName"
+		if err := mgr.GetFieldIndexer().IndexField(
+			context.Background(),
+			&operatorv1.DNS{},
+			clientCAOperatorConfigmapIndexFieldName,
+			func(o client.Object) []string {
+				dns := o.(*operatorv1.DNS)
+				return []string{ClientCAConfigMapName(dns).Name}
+			},
+		); err != nil {
+			return nil, fmt.Errorf("failed to create index for operator-managed client CA configmaps: %w", err)
+		}
 
-	makeMapFunc := func(indexKey string) handler.MapFunc {
-		return func(o client.Object) []reconcile.Request {
-			dnsList := &operatorv1.DNSList{}
-			listOpts := client.MatchingFields{indexKey: o.GetName()}
-			var requests []reconcile.Request
-			if err := reconciler.cache.List(context.Background(), dnsList, listOpts); err != nil {
-				logrus.Errorf("failed to list DNSs for configmap: %v", err)
+		makeMapFunc := func(indexKey string) handler.MapFunc {
+			return func(o client.Object) []reconcile.Request {
+				dnsList := &operatorv1.DNSList{}
+				listOpts := client.MatchingFields{indexKey: o.GetName()}
+				var requests []reconcile.Request
+				if err := reconciler.cache.List(context.Background(), dnsList, listOpts); err != nil {
+					logrus.Errorf("failed to list DNSs for configmap: %v", err)
+					return requests
+				}
+				for _, dns := range dnsList.Items {
+					logrus.Infof("queueing DNSs %s", dns.Name)
+					request := reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Namespace: dns.Namespace,
+							Name:      dns.Name,
+						},
+					}
+					requests = append(requests, request)
+				}
 				return requests
 			}
-			for _, dns := range dnsList.Items {
-				logrus.Infof("queueing DNSs %s", dns.Name)
-				request := reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Namespace: dns.Namespace,
-						Name:      dns.Name,
-					},
-				}
-				requests = append(requests, request)
+		}
+		isInNS := func(namespace string) func(o client.Object) bool {
+			return func(o client.Object) bool {
+				return o.GetNamespace() == namespace
 			}
-			return requests
 		}
-	}
-	isInNS := func(namespace string) func(o client.Object) bool {
-		return func(o client.Object) bool {
-			return o.GetNamespace() == namespace
+		userCMToIC := makeMapFunc(clientCAUserConfigmapIndexFieldName)
+		if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(userCMToIC), predicate.NewPredicateFuncs(isInNS(SourceNamespace))); err != nil {
+			return nil, err
 		}
-	}
-	userCMToIC := makeMapFunc(clientCAUserConfigmapIndexFieldName)
-	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(userCMToIC), predicate.NewPredicateFuncs(isInNS(SourceNamespace))); err != nil {
-		return nil, err
-	}
-	operatorCMToIC := makeMapFunc(clientCAOperatorConfigmapIndexFieldName)
-	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(operatorCMToIC), predicate.NewPredicateFuncs(isInNS(TargetNamespace))); err != nil {
-		return nil, err
-	}
+		operatorCMToIC := makeMapFunc(clientCAOperatorConfigmapIndexFieldName)
+		if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(operatorCMToIC), predicate.NewPredicateFuncs(isInNS(TargetNamespace))); err != nil {
+			return nil, err
+		}*/
 
 	return c, nil
 }
