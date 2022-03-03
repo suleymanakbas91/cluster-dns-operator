@@ -51,9 +51,9 @@ spec:
                   logLevel: Trace will produce extremely verbose logs. Valid values
                   are: "Normal", "Debug", "Trace". Defaults to "Normal".'
                 enum:
-                  - Normal
-                  - Debug
-                  - Trace
+                - Normal
+                - Debug
+                - Trace
                 type: string
               managementState:
                 description: managementState indicates whether the DNS operator should
@@ -173,10 +173,10 @@ spec:
                           properties:
                             name:
                               description: name is the metadata.name of the referenced
-                                  config map
+                                config map
                               type: string
                           required:
-                            - name
+                          - name
                           type: object
                         policy:
                           default: Random
@@ -196,20 +196,20 @@ spec:
                           type: string
                         serverName:
                           description: serverName is the upstream server to connect
-                              to for DNS resolution. This is required when Transport
-                              is set to "tls"
+                            to for DNS resolution. This is required when Transport
+                            is set to "tls"
                           pattern: ^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z0-9-\p{L}]){2,63})$
                           type: string
                         transport:
                           description: transport allows cluster administrators to
-                              opt-in to using a DNS-over-TLS connection between cluster
-                              DNS and an upstream resolver(s). Configuring TLS as the
-                              transport at this level without configuring a CABundle
-                              will result in the system certificates being used to verify
-                              the serving certificate of the upstream resolver(s).
+                            opt-in to using a DNS-over-TLS connection between cluster
+                            DNS and an upstream resolver(s). Configuring TLS as the
+                            transport at this level without configuring a CABundle
+                            will result in the system certificates being used to verify
+                            the serving certificate of the upstream resolver(s).
                           enum:
-                            - tls
-                            - cleartext
+                          - tls
+                          - cleartext
                           type: string
                         upstreams:
                           description: "upstreams is a list of resolvers to forward
@@ -260,10 +260,10 @@ spec:
                     properties:
                       name:
                         description: name is the metadata.name of the referenced config
-                            map
+                          map
                         type: string
                     required:
-                      - name
+                    - name
                     type: object
                   policy:
                     default: Sequential
@@ -282,19 +282,19 @@ spec:
                     type: string
                   serverName:
                     description: serverName is the upstream server to connect to for
-                        DNS resolution. This is required when Transport is set to "tls"
+                      DNS resolution. This is required when Transport is set to "tls"
                     pattern: ^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z0-9-\p{L}]){2,63})$
                     type: string
                   transport:
                     description: transport allows cluster administrators to opt-in
-                        to using a DNS-over-TLS connection between cluster DNS and an
-                        upstream resolver(s). Configuring TLS as the transport at this
-                        level without configuring a CABundle will result in the system
-                        certificates being used to verify the serving certificate of
-                        the upstream resolver(s).
+                      to using a DNS-over-TLS connection between cluster DNS and an
+                      upstream resolver(s). Configuring TLS as the transport at this
+                      level without configuring a CABundle will result in the system
+                      certificates being used to verify the serving certificate of
+                      the upstream resolver(s).
                     enum:
-                      - tls
-                      - cleartext
+                    - tls
+                    - cleartext
                     type: string
                   upstreams:
                     default:
