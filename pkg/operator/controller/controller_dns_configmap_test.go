@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	v1 "github.com/openshift/api/config/v1"
+	"io/ioutil"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -347,64 +348,9 @@ foo.com:5353 {
 			},
 		},
 	}
-	expectedCorefileToCheckIfForwardPluginTLS := `# foo
-		foo.com:5353 {
-		    prometheus 127.0.0.1:9153
-		    forward . 1.1.1.1 2.2.2.2:5353 {
-				tls_servername dns.foo.com
-				tls
-		        policy round_robin
-		    }
-		    errors
-            log . {
-                class error
-            }
-		    bufsize 512
-		    cache 900 {
-		        denial 9984 30
-		    }
-		}
-		# bar
-		bar.com:5353 {
-		    prometheus 127.0.0.1:9153
-		    forward . 1.1.1.1 2.2.2.2:5353 {
-				tls_servername dns.bar.com
-				tls caBundle.crt
-		        policy round_robin
-		    }
-		    errors
-            log . {
-                class error
-            }
-		    bufsize 512
-		    cache 900 {
-		        denial 9984 30
-		    }
-		}
-		.:5353 {
-		    bufsize 512
-		    errors
-            log . {
-                class denial error
-            }
-		    health {
-		        lameduck 20s
-		    }
-		    ready
-		    kubernetes cluster.local in-addr.arpa ip6.arpa {
-		        pods insecure
-		        fallthrough in-addr.arpa ip6.arpa
-		    }
-		    prometheus 127.0.0.1:9153
-		    forward . /etc/resolv.conf {
-		        policy sequential
-		    }
-		    cache 900 {
-		        denial 9984 30
-		    }
-		    reload
-		}
-		`
+
+	// Ignore the error because if the Corefile doesn't match, the test will fail.
+	expectedCorefileToCheckIfForwardPluginTLS, _ := loadTestCorefile("forwardplugin_tls")
 
 	if cm, err := desiredDNSConfigMap(dns, clusterDomain); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
@@ -1670,4 +1616,12 @@ foo.com:5353 {
 			}
 		})
 	}
+}
+
+// loadTestCorefile looks in the default directory of ./test_corefiles for a file matching the name argument
+// and returns the file contents as a string.
+func loadTestCorefile(name string) (string, error) {
+	corefile, err := ioutil.ReadFile("./test_corefiles/" + name)
+
+	return string(corefile), err
 }
