@@ -3,11 +3,10 @@ package controller
 import (
 	"context"
 	"fmt"
-	"net"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	"net"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/cluster-dns-operator/pkg/manifests"
 	operatorconfig "github.com/openshift/cluster-dns-operator/pkg/operator/config"
@@ -74,12 +73,13 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 		return nil, err
 	}
 
-	// Trigger reconcile requests for the user created ca client configmap.
-	caClientCMPredicate := predicate.NewPredicateFuncs(func(o client.Object) bool {
-		return o.GetNamespace() == SourceNamespace
-	})
+	isInNS := func(namespace string) func(o client.Object) bool {
+		return func(o client.Object) bool {
+			return o.GetNamespace() == namespace
+		}
+	}
 
-	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, caClientCMPredicate); err != nil {
+	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, predicate.NewPredicateFuncs(isInNS(SourceNamespace))); err != nil {
 		return nil, err
 	}
 
