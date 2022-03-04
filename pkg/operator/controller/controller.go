@@ -76,11 +76,7 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 
 	// Trigger reconcile requests for the user created ca client configmap.
 	caClientCMPredicate := predicate.NewPredicateFuncs(func(o client.Object) bool {
-		dns := &operatorv1.DNS{}
-		if err := reconciler.client.Get(context.TODO(), types.NamespacedName{Name: DefaultDNSController}, dns); err != nil {
-			return false
-		}
-		return o.GetName() == dns.Spec.UpstreamResolvers.CABundle.Name && o.GetNamespace() == SourceNamespace
+		return o.GetNamespace() == SourceNamespace
 	})
 
 	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, caClientCMPredicate); err != nil {
