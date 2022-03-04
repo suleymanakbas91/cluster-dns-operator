@@ -73,13 +73,21 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 		return nil, err
 	}
 
+	caClientCMToDNS := func(_ client.Object) []reconcile.Request {
+		return []reconcile.Request{{
+			NamespacedName: types.NamespacedName{
+				Name: DefaultDNSName,
+			},
+		}}
+	}
+
 	isInNS := func(namespace string) func(o client.Object) bool {
 		return func(o client.Object) bool {
 			return o.GetNamespace() == namespace
 		}
 	}
 
-	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForObject{}, predicate.NewPredicateFuncs(isInNS(SourceNamespace))); err != nil {
+	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(caClientCMToDNS), predicate.NewPredicateFuncs(isInNS(SourceNamespace))); err != nil {
 		return nil, err
 	}
 
