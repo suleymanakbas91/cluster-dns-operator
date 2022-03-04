@@ -37,12 +37,12 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     prometheus 127.0.0.1:9153
     forward .{{range .Upstreams}} {{.}}{{end}} {
         {{- if ne .ServerName "" }}
-        tls_servername {{.ServerName}}
-        {{- if ne .CABundle.Name "" }}
-        tls caBundle.crt
-        {{- else}}
-        tls
-        {{- end}}
+        	tls_servername {{.ServerName}}
+        	{{- if ne .CABundle.Name "" -}}
+        		tls caBundle.crt
+        	{{- else}}
+        		tls
+        	{{- end}}
         {{- end}}
         policy {{ CoreDNSForwardingPolicy .Policy }}
     }
@@ -139,9 +139,22 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.Con
 
 	// Ensure that Transport: tls cannot be configured without a ServerName
 	for _, server := range dns.Spec.Servers {
-		if server.ForwardPlugin.Transport == operatorv1.TLSTransport && server.ForwardPlugin.ServerName == "" {
+		t := server.ForwardPlugin.Transport
+		sn := server.ForwardPlugin.ServerName
+
+		// For security purposes, ServerName MUST be set when Transport is tls
+		if t == operatorv1.TLSTransport && sn == "" {
 			return nil, errTransportTLSConfiguredWithoutServerName
 		}
+
+		// When Transport is "" or cleartext and a ServerName is set the Corefile will ignore any other TLS settings
+		if (t == "" || t == operatorv1.CleartextTransport) && sn != "" {
+			logrus.Warningf("ServerName is set in %s but Transport is not set to tls. ServerName will be ignored", server.Name)
+		}
+	}
+
+	if dns.Spec.UpstreamResolvers.Transport == operatorv1.TLSTransport && dns.Spec.UpstreamResolvers.ServerName == "" {
+		return nil, errTransportTLSConfiguredWithoutServerName
 	}
 
 	upstreamResolvers := operatorv1.UpstreamResolvers{
