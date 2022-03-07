@@ -5,12 +5,11 @@ import (
 	"fmt"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
-	"net"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-
 	"github.com/openshift/cluster-dns-operator/pkg/manifests"
 	operatorconfig "github.com/openshift/cluster-dns-operator/pkg/operator/config"
 	"github.com/openshift/cluster-dns-operator/pkg/util/slice"
+	"net"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/sirupsen/logrus"
 
@@ -69,10 +68,6 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 	if err := c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{OwnerType: &operatorv1.DNS{}}); err != nil {
 		return nil, err
 	}
-	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &operatorv1.DNS{}}); err != nil {
-		return nil, err
-	}
-
 	caClientCMToDNS := func(o client.Object) []reconcile.Request {
 		logrus.Infof("Calling caClientCMToDNS for object: [%+v]", o)
 		return []reconcile.Request{{DefaultDNSNamespaceName()}}
@@ -86,6 +81,9 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 	}
 
 	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(caClientCMToDNS), predicate.NewPredicateFuncs(isInNS(SourceNamespace))); err != nil {
+		return nil, err
+	}
+	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &operatorv1.DNS{}}); err != nil {
 		return nil, err
 	}
 
