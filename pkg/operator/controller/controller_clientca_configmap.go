@@ -20,7 +20,7 @@ import (
 // configmap exists, the configmap if it does exist, and an error value.
 func (r *reconciler) ensureClientCAConfigMap(dns *operatorv1.DNS) (bool, *corev1.ConfigMap, error) {
 	sourceName := types.NamespacedName{
-		Namespace: SourceNamespace,
+		Namespace: GlobalUserSpecifiedConfigNamespace,
 		Name:      dns.Spec.UpstreamResolvers.CABundle.Name,
 	}
 	haveSource, source, err := r.currentClientCAConfigMap(sourceName)

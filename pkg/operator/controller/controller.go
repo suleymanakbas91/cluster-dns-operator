@@ -40,8 +40,10 @@ const (
 	// this ensures the operator has a chance to handle all states.
 	DNSControllerFinalizer = "dns.operator.openshift.io/dns-controller"
 
-	controllerName  = "dns_controller"
-	SourceNamespace = "openshift-config"
+	controllerName = "dns_controller"
+
+	// GlobalUserSpecifiedConfigNamespace is the namespace for configuring OpenShift.
+	GlobalUserSpecifiedConfigNamespace = "openshift-config"
 )
 
 // New creates the operator controller from configuration. This is the
@@ -80,7 +82,7 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 		}
 	}
 
-	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(caClientCMToDNS), predicate.NewPredicateFuncs(isInNS(SourceNamespace))); err != nil {
+	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(caClientCMToDNS), predicate.NewPredicateFuncs(isInNS(GlobalUserSpecifiedConfigNamespace))); err != nil {
 		return nil, err
 	}
 	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &operatorv1.DNS{}}); err != nil {
