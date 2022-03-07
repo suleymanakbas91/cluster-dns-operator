@@ -74,7 +74,10 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 	}
 
 	caClientCMToDNS := func(_ client.Object) []reconcile.Request {
-		return []reconcile.Request{{DefaultDNSNamespaceName()}}
+		return []reconcile.Request{{types.NamespacedName{
+			Name:      DefaultOperatorName,
+			Namespace: DefaultOperatorNamespace,
+		}}}
 	}
 
 	isInNS := func(namespace string) func(o client.Object) bool {
