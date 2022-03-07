@@ -28,7 +28,7 @@ func (r *reconciler) ensureClientCAConfigMap(dns *operatorv1.DNS) (bool, *corev1
 		return false, nil, err
 	}
 
-	destName := ClientCABundleConfigMapName(dns)
+	destName := ClientCABundleConfigMapName(source)
 	have, current, err := r.currentClientCAConfigMap(destName)
 	if err != nil {
 		return false, nil, err
