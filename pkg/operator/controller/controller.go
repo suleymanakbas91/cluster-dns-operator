@@ -73,14 +73,13 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 		return nil, err
 	}
 
-	caClientCMToDNS := func(_ client.Object) []reconcile.Request {
-		return []reconcile.Request{{types.NamespacedName{
-			Name:      DefaultOperatorName,
-			Namespace: DefaultOperatorNamespace,
-		}}}
+	caClientCMToDNS := func(o client.Object) []reconcile.Request {
+		logrus.Infof("Calling caClientCMToDNS for object: [%+v]", o)
+		return []reconcile.Request{{DefaultDNSNamespaceName()}}
 	}
 
 	isInNS := func(namespace string) func(o client.Object) bool {
+		logrus.Infof("Calling isInNS for namespace: [%s]", namespace)
 		return func(o client.Object) bool {
 			return o.GetNamespace() == namespace
 		}
