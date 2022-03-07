@@ -41,9 +41,6 @@ const (
 	DNSControllerFinalizer = "dns.operator.openshift.io/dns-controller"
 
 	controllerName = "dns_controller"
-
-	// GlobalUserSpecifiedConfigNamespace is the namespace for configuring OpenShift.
-	GlobalUserSpecifiedConfigNamespace = "openshift-config"
 )
 
 // New creates the operator controller from configuration. This is the

@@ -34,6 +34,9 @@ const (
 	ContainerNameOfDNSOperator = "dns-operator"
 
 	DeploymentNameOfDNSOperator = "dns-operator"
+
+	// GlobalUserSpecifiedConfigNamespace is the namespace for configuring OpenShift.
+	GlobalUserSpecifiedConfigNamespace = "openshift-config"
 )
 
 // DNSClusterOperatorName returns the namespaced name of the ClusterOperator
