@@ -125,7 +125,7 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		)
 
 		if len(ci.Spec.ClientTLS.ClientCA.Name) != 0 {
-			clientCAConfigmapName := controller.ClientCAConfigMapName(ci)
+			clientCAConfigmapName := controller.ClientCABundleConfigMapName(ci)
 			clientCAVolumeName := "client-ca"
 			clientCAVolumeMountPath := "/etc/pki/tls/client-ca"
 			clientCABundleFilename := "ca-bundle.pem"
