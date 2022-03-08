@@ -18,55 +18,69 @@ import (
 // between the openshift-config and openshift-dns namespaces if the user has
 // configured a client CA configmap.  Returns a Boolean indicating whether the
 // configmap exists, the configmap if it does exist, and an error value.
-func (r *reconciler) ensureClientCAConfigMap(dns *operatorv1.DNS) (bool, *corev1.ConfigMap, error) {
-	sourceName := types.NamespacedName{
-		Namespace: GlobalUserSpecifiedConfigNamespace,
-		Name:      dns.Spec.UpstreamResolvers.CABundle.Name,
+func (r *reconciler) ensureClientCAConfigMaps(dns *operatorv1.DNS) error {
+	var configmapNames []string
+	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
+		configmapNames = append(configmapNames, dns.Spec.UpstreamResolvers.CABundle.Name)
 	}
-	haveSource, source, err := r.currentClientCAConfigMap(sourceName)
-	if err != nil {
-		return false, nil, err
-	}
-
-	destName := ClientCABundleConfigMapName(source)
-	have, current, err := r.currentClientCAConfigMap(destName)
-	if err != nil {
-		return false, nil, err
+	for _, server := range dns.Spec.Servers {
+		if server.ForwardPlugin.CABundle.Name != "" {
+			configmapNames = append(configmapNames, server.ForwardPlugin.CABundle.Name)
+		}
 	}
 
-	want, desired, err := desiredClientCAConfigMap(dns, haveSource, source, destName)
-	if err != nil {
-		return have, current, err
-	}
+	for _, name := range configmapNames {
+		sourceName := types.NamespacedName{
+			Namespace: GlobalUserSpecifiedConfigNamespace,
+			Name:      name,
+		}
+		haveSource, source, err := r.currentClientCAConfigMap(sourceName)
+		if err != nil {
+			return err
+		}
 
-	switch {
-	case !want && !have:
-		return false, nil, nil
-	case !want && have:
-		if err := r.client.Delete(context.TODO(), current); err != nil {
-			if !errors.IsNotFound(err) {
-				return true, current, fmt.Errorf("failed to delete configmap: %w", err)
+		destName := ClientCABundleConfigMapName(source)
+		have, current, err := r.currentClientCAConfigMap(destName)
+		if err != nil {
+			return err
+		}
+
+		want, desired, err := desiredClientCAConfigMap(dns, haveSource, source, destName)
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case !want && !have:
+			return nil
+		case !want && have:
+			if err := r.client.Delete(context.TODO(), current); err != nil {
+				if !errors.IsNotFound(err) {
+					return fmt.Errorf("failed to delete configmap: %w", err)
+				}
+			} else {
+				logrus.Infof("deleted configmap %s/%s", current.Namespace, current.Name)
 			}
-		} else {
-			logrus.Infof("deleted configmap %s/%s", current.Namespace, current.Name)
-		}
-		return false, nil, nil
-	case want && !have:
-		if err := r.client.Create(context.TODO(), desired); err != nil {
-			return false, nil, fmt.Errorf("failed to create configmap: %w", err)
-		}
-		logrus.Infof("created configmap %s/%s", desired.Namespace, desired.Name)
-		return r.currentClientCAConfigMap(destName)
-	case want && have:
-		if updated, err := r.updateClientCAConfigMap(current, desired); err != nil {
-			return true, current, fmt.Errorf("failed to update configmap: %w", err)
-		} else if updated {
-			logrus.Infof("updated configmap %s/%s", desired.Namespace, desired.Name)
-			return r.currentClientCAConfigMap(destName)
+			return nil
+		case want && !have:
+			if err := r.client.Create(context.TODO(), desired); err != nil {
+				return fmt.Errorf("failed to create configmap: %w", err)
+			}
+			logrus.Infof("created configmap %s/%s", desired.Namespace, desired.Name)
+			_, _, err = r.currentClientCAConfigMap(destName)
+			return err
+		case want && have:
+			if updated, err := r.updateClientCAConfigMap(current, desired); err != nil {
+				return fmt.Errorf("failed to update configmap: %w", err)
+			} else if updated {
+				logrus.Infof("updated configmap %s/%s", desired.Namespace, desired.Name)
+				_, _, err = r.currentClientCAConfigMap(destName)
+				return err
+			}
 		}
 	}
 
-	return have, current, nil
+	return nil
 }
 
 // desiredClientCAConfigMap returns the desired client CA configmap.  Returns a

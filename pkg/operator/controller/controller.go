@@ -67,22 +67,19 @@ func New(mgr manager.Manager, config operatorconfig.Config) (controller.Controll
 	if err := c.Watch(&source.Kind{Type: &corev1.Service{}}, &handler.EnqueueRequestForOwner{OwnerType: &operatorv1.DNS{}}); err != nil {
 		return nil, err
 	}
-	caClientCMToDNS := func(o client.Object) []reconcile.Request {
-		logrus.Infof("Calling caClientCMToDNS for object: [%+v]", o)
-		return []reconcile.Request{{DefaultDNSNamespaceName()}}
+	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &operatorv1.DNS{}}); err != nil {
+		return nil, err
 	}
 
+	caClientCMToDNS := func(o client.Object) []reconcile.Request {
+		return []reconcile.Request{{DefaultDNSNamespaceName()}}
+	}
 	isInNS := func(namespace string) func(o client.Object) bool {
-		logrus.Infof("Calling isInNS for namespace: [%s]", namespace)
 		return func(o client.Object) bool {
 			return o.GetNamespace() == namespace
 		}
 	}
-
 	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(caClientCMToDNS), predicate.NewPredicateFuncs(isInNS(GlobalUserSpecifiedConfigNamespace))); err != nil {
-		return nil, err
-	}
-	if err := c.Watch(&source.Kind{Type: &corev1.ConfigMap{}}, &handler.EnqueueRequestForOwner{OwnerType: &operatorv1.DNS{}}); err != nil {
 		return nil, err
 	}
 
@@ -419,8 +416,8 @@ func (r *reconciler) ensureDNS(dns *operatorv1.DNS) error {
 		if _, _, err := r.ensureDNSConfigMap(dns, clusterDomain); err != nil {
 			errs = append(errs, fmt.Errorf("failed to create configmap for dns %s: %v", dns.Name, err))
 		}
-		if _, _, err := r.ensureClientCAConfigMap(dns); err != nil {
-			errs = append(errs, fmt.Errorf("failed to create client ca configmap for dns %s: %v", dns.Name, err))
+		if err := r.ensureClientCAConfigMaps(dns); err != nil {
+			errs = append(errs, fmt.Errorf("failed to create client ca configmaps for dns %s: %v", dns.Name, err))
 		}
 		if haveSvc, svc, err := r.ensureDNSService(dns, clusterIP, daemonsetRef); err != nil {
 			// Set clusterIP to an empty string to cause ClusterOperator to report
