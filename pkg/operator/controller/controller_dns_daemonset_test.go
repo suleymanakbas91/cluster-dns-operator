@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	v1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -55,6 +55,177 @@ func TestDesiredDNSDaemonset(t *testing.T) {
 				}
 			default:
 				t.Errorf("unexpected daemonset container %q", c.Name)
+			}
+		}
+	}
+}
+
+func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
+	coreDNSImage := "quay.io/openshift/coredns:test"
+	kubeRBACProxyImage := "quay.io/openshift/origin-kube-rbac-proxy:test"
+
+	dns := &operatorv1.DNS{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: DefaultDNSController,
+		},
+		Spec: operatorv1.DNSSpec{
+			Servers: []operatorv1.Server{
+				{
+					ForwardPlugin: operatorv1.ForwardPlugin{
+						ServerName: "dns.foo.com",
+						Transport:  operatorv1.TLSTransport,
+						CABundle: v1.ConfigMapNameReference{
+							Name: "caClientBundle1",
+						},
+						Upstreams: []string{"1.1.1.1"},
+					},
+					Name:  "foo.com",
+					Zones: []string{"foo.com"},
+				},
+				{
+					ForwardPlugin: operatorv1.ForwardPlugin{
+						ServerName: "dns.bar.com",
+						Transport:  operatorv1.TLSTransport,
+						CABundle: v1.ConfigMapNameReference{
+							Name: "caClientBundle2",
+						},
+						Upstreams: []string{"2.2.2.2"},
+					},
+					Name:  "bar.com",
+					Zones: []string{"bar.com"},
+				},
+			},
+			UpstreamResolvers: operatorv1.UpstreamResolvers{
+				CABundle: v1.ConfigMapNameReference{
+					Name: "caClientBundle3",
+				},
+				Transport:  operatorv1.TLSTransport,
+				ServerName: "example.com",
+			},
+		},
+	}
+
+	if ds, err := desiredDNSDaemonSet(dns, coreDNSImage, kubeRBACProxyImage); err != nil {
+		t.Errorf("invalid dns daemonset: %v", err)
+	} else {
+		// Validate the volumes
+		clientCABundleFilename := "caBundle.crt"
+		expectedVolumes := map[string]corev1.Volume{
+			"config-volume": {
+				Name: "config-volume",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "dns-default",
+						},
+						Items: []corev1.KeyToPath{
+							{
+								Key:  "Corefile",
+								Path: "Corefile",
+							},
+						},
+					},
+				},
+			},
+			"metrics-tls": {
+				Name: "metrics-tls",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: "dns-default-metrics-tls",
+					},
+				},
+			},
+			"dns-client-cabundle-caClientBundle1": {
+				Name: "dns-client-cabundle-caClientBundle1",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "dns-client-cabundle-caClientBundle1",
+						},
+						Items: []corev1.KeyToPath{
+							{
+								Key:  clientCABundleFilename,
+								Path: clientCABundleFilename,
+							},
+						},
+					},
+				},
+			},
+			"dns-client-cabundle-caClientBundle2": {
+				Name: "dns-client-cabundle-caClientBundle2",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "dns-client-cabundle-caClientBundle2",
+						},
+						Items: []corev1.KeyToPath{
+							{
+								Key:  clientCABundleFilename,
+								Path: clientCABundleFilename,
+							},
+						},
+					},
+				},
+			},
+			"dns-client-cabundle-caClientBundle3": {
+				Name: "dns-client-cabundle-caClientBundle3",
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "dns-client-cabundle-caClientBundle3",
+						},
+						Items: []corev1.KeyToPath{
+							{
+								Key:  clientCABundleFilename,
+								Path: clientCABundleFilename,
+							},
+						},
+					},
+				},
+			},
+		}
+		// Validate the volume mounts
+		expectedVolumeMounts := map[string]corev1.VolumeMount{
+			"config-volume": {
+				Name:      "config-volume",
+				MountPath: "/etc/coredns",
+				ReadOnly:  true,
+			},
+			"dns-client-cabundle-caClientBundle1": {
+				Name:      "dns-client-cabundle-caClientBundle1",
+				MountPath: "/etc/pki/dns.foo.com",
+				ReadOnly:  true,
+			},
+			"dns-client-cabundle-caClientBundle2": {
+				Name:      "dns-client-cabundle-caClientBundle2",
+				MountPath: "/etc/pki/dns.bar.com",
+				ReadOnly:  true,
+			},
+			"dns-client-cabundle-caClientBundle3": {
+				Name:      "dns-client-cabundle-caClientBundle3",
+				MountPath: "/etc/pki/example.com",
+				ReadOnly:  true,
+			},
+		}
+		actualVolumes := ds.Spec.Template.Spec.Volumes
+		if len(actualVolumes) != 5 {
+			t.Errorf("unexpected number of volumes: expected 5, got %d", len(actualVolumes))
+		}
+		for _, actualVolume := range actualVolumes {
+			expectedVolume := expectedVolumes[actualVolume.Name]
+			if !reflect.DeepEqual(actualVolume, expectedVolume) {
+				t.Errorf("unexpected volume: expected %#v, got %#v", expectedVolume, actualVolume)
+			}
+		}
+
+		actualVolumeMounts := ds.Spec.Template.Spec.Containers[0].VolumeMounts
+		if len(actualVolumeMounts) != 4 {
+			t.Errorf("unexpected number of volume mounts: expected 4, got %d", len(actualVolumeMounts))
+		}
+		for _, actualVolumeMount := range actualVolumeMounts {
+			expectedVolumeMount := expectedVolumeMounts[actualVolumeMount.Name]
+			if !reflect.DeepEqual(actualVolumeMount, expectedVolumeMount) {
+				t.Errorf("unexpected volume: expected %#v, got %#v", expectedVolumeMount, actualVolumeMount)
 			}
 		}
 	}

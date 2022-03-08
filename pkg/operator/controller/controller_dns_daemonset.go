@@ -85,16 +85,15 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 	daemonset.Spec.Template.Spec.Tolerations = tolerationsForDNS(dns)
 
 	coreFileVolumeFound := false
-	volumes := daemonset.Spec.Template.Spec.Volumes
-	for i := range volumes {
+	for i := range daemonset.Spec.Template.Spec.Volumes {
 		// TODO: remove hardcoding of volume name
-		switch volumes[i].Name {
+		switch daemonset.Spec.Template.Spec.Volumes[i].Name {
 		case "config-volume":
-			volumes[i].ConfigMap.Name = DNSConfigMapName(dns).Name
+			daemonset.Spec.Template.Spec.Volumes[i].ConfigMap.Name = DNSConfigMapName(dns).Name
 			coreFileVolumeFound = true
 			break
 		case "metrics-tls":
-			volumes[i].Secret = &corev1.SecretVolumeSource{
+			daemonset.Spec.Template.Spec.Volumes[i].Secret = &corev1.SecretVolumeSource{
 				SecretName: DNSMetricsSecretName(dns),
 			}
 		}
@@ -112,17 +111,16 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		}
 	}
 
-	dnsVolumeMounts := daemonset.Spec.Template.Spec.Containers[0].VolumeMounts
 	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
 		vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
-		volumes = append(volumes, *vol)
-		dnsVolumeMounts = append(dnsVolumeMounts, *volMount)
+		daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
+		daemonset.Spec.Template.Spec.Containers[0].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[0].VolumeMounts, *volMount)
 	}
 	for _, server := range dns.Spec.Servers {
 		if server.ForwardPlugin.CABundle.Name != "" {
 			vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
-			volumes = append(volumes, *vol)
-			dnsVolumeMounts = append(dnsVolumeMounts, *volMount)
+			daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
+			daemonset.Spec.Template.Spec.Containers[0].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[0].VolumeMounts, *volMount)
 		}
 	}
 
@@ -307,7 +305,7 @@ func tolerationsTolerateTaints(tolerations []corev1.Toleration, taints []corev1.
 }
 
 // daemonsetConfigChanged checks if current config matches the expected config
-// for the dns daemonset and if not returns the updated config.
+// for the dns daemonset and if so, returns the updated config.
 func daemonsetConfigChanged(current, expected *appsv1.DaemonSet) (bool, *appsv1.DaemonSet) {
 	changed := false
 	updated := current.DeepCopy()
