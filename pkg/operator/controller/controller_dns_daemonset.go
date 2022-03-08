@@ -106,21 +106,20 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		switch c.Name {
 		case "dns":
 			daemonset.Spec.Template.Spec.Containers[i].Image = coreDNSImage
+			if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
+				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
+				daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
+				daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
+			}
+			for _, server := range dns.Spec.Servers {
+				if server.ForwardPlugin.CABundle.Name != "" {
+					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
+					daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
+					daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
+				}
+			}
 		case "kube-rbac-proxy":
 			daemonset.Spec.Template.Spec.Containers[i].Image = kubeRBACProxyImage
-		}
-	}
-
-	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
-		vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
-		daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
-		daemonset.Spec.Template.Spec.Containers[0].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[0].VolumeMounts, *volMount)
-	}
-	for _, server := range dns.Spec.Servers {
-		if server.ForwardPlugin.CABundle.Name != "" {
-			vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
-			daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
-			daemonset.Spec.Template.Spec.Containers[0].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[0].VolumeMounts, *volMount)
 		}
 	}
 
