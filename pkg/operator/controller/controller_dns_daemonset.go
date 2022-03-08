@@ -107,15 +107,17 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		case "dns":
 			daemonset.Spec.Template.Spec.Containers[i].Image = coreDNSImage
 			if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
+				logrus.Infof("got a cabundle for upstreamresolvers: %s", dns.Spec.UpstreamResolvers.CABundle.Name)
 				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
-				daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
-				daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
+				daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, vol)
+				daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, volMount)
 			}
 			for _, server := range dns.Spec.Servers {
 				if server.ForwardPlugin.CABundle.Name != "" {
+					logrus.Infof("got a cabundle for forwardplugin: %s", server.ForwardPlugin.CABundle.Name)
 					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
-					daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
-					daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
+					daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, vol)
+					daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, volMount)
 				}
 			}
 		case "kube-rbac-proxy":
@@ -128,7 +130,8 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 
 // clientCACMVolAndVolMount takes a CA bundle ConfigMap name and a TLS server name, and returns
 // the ConfigMap Volume and VolumeMount to be used for the DaemonSet.
-func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.Volume, *corev1.VolumeMount) {
+func clientCACMVolAndVolMount(caBundleName string, serverName string) (corev1.Volume, corev1.VolumeMount) {
+	logrus.Infof("generating vols for %s and %s", caBundleName, serverName)
 	clientCAConfigmapName := ClientCABundleConfigMapName(caBundleName)
 	clientCAVolumeName := clientCAConfigmapName.Name
 	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s", serverName)
@@ -154,7 +157,7 @@ func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.V
 		MountPath: clientCAVolumeMountPath,
 		ReadOnly:  true,
 	}
-	return &clientCAVolume, &clientCAVolumeMount
+	return clientCAVolume, clientCAVolumeMount
 }
 
 // nodeSelectorForDNS takes a dns and returns the node selector that it
