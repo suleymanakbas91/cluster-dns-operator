@@ -39,7 +39,7 @@ func (r *reconciler) ensureClientCAConfigMaps(dns *operatorv1.DNS) error {
 			return err
 		}
 
-		destName := ClientCABundleConfigMapName(source)
+		destName := ClientCABundleConfigMapName(source.Name)
 		have, current, err := r.currentClientCAConfigMap(destName)
 		if err != nil {
 			return err

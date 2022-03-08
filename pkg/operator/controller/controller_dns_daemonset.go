@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
@@ -86,15 +85,16 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 	daemonset.Spec.Template.Spec.Tolerations = tolerationsForDNS(dns)
 
 	coreFileVolumeFound := false
-	for i := range daemonset.Spec.Template.Spec.Volumes {
+	volumes := daemonset.Spec.Template.Spec.Volumes
+	for i := range volumes {
 		// TODO: remove hardcoding of volume name
-		switch daemonset.Spec.Template.Spec.Volumes[i].Name {
+		switch volumes[i].Name {
 		case "config-volume":
-			daemonset.Spec.Template.Spec.Volumes[i].ConfigMap.Name = DNSConfigMapName(dns).Name
+			volumes[i].ConfigMap.Name = DNSConfigMapName(dns).Name
 			coreFileVolumeFound = true
 			break
 		case "metrics-tls":
-			daemonset.Spec.Template.Spec.Volumes[i].Secret = &corev1.SecretVolumeSource{
+			volumes[i].Secret = &corev1.SecretVolumeSource{
 				SecretName: DNSMetricsSecretName(dns),
 			}
 		}
@@ -112,121 +112,52 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		}
 	}
 
-	/*if len(ci.Spec.ClientTLS.ClientCertificatePolicy) != 0 {
-		var clientAuthPolicy string
-		switch ci.Spec.ClientTLS.ClientCertificatePolicy {
-		case operatorv1.ClientCertificatePolicyRequired:
-			clientAuthPolicy = "required"
-		case operatorv1.ClientCertificatePolicyOptional:
-			clientAuthPolicy = "optional"
+	dnsVolumeMounts := daemonset.Spec.Template.Spec.Containers[0].VolumeMounts
+	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
+		vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
+		volumes = append(volumes, *vol)
+		dnsVolumeMounts = append(dnsVolumeMounts, *volMount)
+	}
+	for _, server := range dns.Spec.Servers {
+		if server.ForwardPlugin.CABundle.Name != "" {
+			vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
+			volumes = append(volumes, *vol)
+			dnsVolumeMounts = append(dnsVolumeMounts, *volMount)
 		}
-		env = append(env,
-			corev1.EnvVar{Name: RouterClientAuthPolicy, Value: clientAuthPolicy},
-		)
-
-		if len(ci.Spec.ClientTLS.ClientCA.Name) != 0 {
-			clientCAConfigmapName := controller.ClientCABundleConfigMapName(ci)
-			clientCAVolumeName := "client-ca"
-			clientCAVolumeMountPath := "/etc/pki/tls/client-ca"
-			clientCABundleFilename := "ca-bundle.pem"
-			clientCAVolume := corev1.Volume{
-				Name: clientCAVolumeName,
-				VolumeSource: corev1.VolumeSource{
-					ConfigMap: &corev1.ConfigMapVolumeSource{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: clientCAConfigmapName.Name,
-						},
-						Items: []corev1.KeyToPath{
-							{
-								Key:  clientCABundleFilename,
-								Path: clientCABundleFilename,
-							},
-						},
-					},
-				},
-			}
-			clientCAVolumeMount := corev1.VolumeMount{
-				Name:      clientCAVolumeName,
-				MountPath: clientCAVolumeMountPath,
-				ReadOnly:  true,
-			}
-			volumes = append(volumes, clientCAVolume)
-			routerVolumeMounts = append(routerVolumeMounts, clientCAVolumeMount)
-
-			clientAuthCAPath := filepath.Join(clientCAVolumeMount.MountPath, clientCABundleFilename)
-			env = append(env, corev1.EnvVar{Name: RouterClientAuthCA, Value: clientAuthCAPath})
-
-			if haveClientCAConfigmap {
-				// If any certificates in the client CA bundle
-				// specify any CRL distribution points, then we
-				// need to configure a configmap volume.  The
-				// crl controller is responsible for managing
-				// the configmap.
-				var clientCAData []byte
-				if v, ok := clientCAConfigmap.Data[clientCABundleFilename]; !ok {
-					return nil, fmt.Errorf("client CA configmap %s/%s is missing %q", clientCAConfigmap.Namespace, clientCAConfigmap.Name, clientCABundleFilename)
-				} else {
-					clientCAData = []byte(v)
-				}
-				var someClientCAHasCRL bool
-				for len(clientCAData) > 0 {
-					block, data := pem.Decode(clientCAData)
-					if block == nil {
-						break
-					}
-					clientCAData = data
-					cert, err := x509.ParseCertificate(block.Bytes)
-					if err != nil {
-						return nil, fmt.Errorf("client CA configmap %s/%s has an invalid certificate: %w", clientCAConfigmap.Namespace, clientCAConfigmap.Name, err)
-					}
-					if len(cert.CRLDistributionPoints) != 0 {
-						someClientCAHasCRL = true
-						break
-					}
-				}
-				if someClientCAHasCRL {
-					clientCACRLSecretName := controller.CRLConfigMapName(ci)
-					clientCACRLVolumeName := "client-ca-crl"
-					clientCACRLVolumeMountPath := "/etc/pki/tls/client-ca-crl"
-					clientCACRLFilename := "crl.pem"
-					clientCACRLVolume := corev1.Volume{
-						Name: clientCACRLVolumeName,
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: clientCACRLSecretName.Name,
-								},
-								Items: []corev1.KeyToPath{
-									{
-										Key:  clientCACRLFilename,
-										Path: clientCACRLFilename,
-									},
-								},
-							},
-						},
-					}
-					clientCACRLVolumeMount := corev1.VolumeMount{
-						Name:      clientCACRLVolumeName,
-						MountPath: clientCACRLVolumeMountPath,
-						ReadOnly:  true,
-					}
-					volumes = append(volumes, clientCACRLVolume)
-					routerVolumeMounts = append(routerVolumeMounts, clientCACRLVolumeMount)
-
-					clientAuthCRLPath := filepath.Join(clientCACRLVolumeMount.MountPath, clientCACRLFilename)
-					env = append(env, corev1.EnvVar{Name: RouterClientAuthCRL, Value: clientAuthCRLPath})
-				}
-			}
-
-			if len(ci.Spec.ClientTLS.AllowedSubjectPatterns) != 0 {
-				pattern := "(?:" + strings.Join(ci.Spec.ClientTLS.AllowedSubjectPatterns, "|") + ")"
-				env = append(env, corev1.EnvVar{Name: RouterClientAuthFilter, Value: pattern})
-			}
-		}
-
-	}*/
+	}
 
 	return daemonset, nil
+}
+
+// clientCACMVolAndVolMount takes a CA bundle ConfigMap name and a TLS server name, and returns
+// the ConfigMap Volume and VolumeMount to be used for the DaemonSet.
+func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.Volume, *corev1.VolumeMount) {
+	clientCAConfigmapName := ClientCABundleConfigMapName(caBundleName)
+	clientCAVolumeName := clientCAConfigmapName.Name
+	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s", serverName)
+	clientCABundleFilename := "caBundle.crt"
+	clientCAVolume := corev1.Volume{
+		Name: clientCAVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: clientCAConfigmapName.Name,
+				},
+				Items: []corev1.KeyToPath{
+					{
+						Key:  clientCABundleFilename,
+						Path: clientCABundleFilename,
+					},
+				},
+			},
+		},
+	}
+	clientCAVolumeMount := corev1.VolumeMount{
+		Name:      clientCAVolumeName,
+		MountPath: clientCAVolumeMountPath,
+		ReadOnly:  true,
+	}
+	return &clientCAVolume, &clientCAVolumeMount
 }
 
 // nodeSelectorForDNS takes a dns and returns the node selector that it

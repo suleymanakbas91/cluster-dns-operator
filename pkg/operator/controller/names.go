@@ -2,8 +2,6 @@ package controller
 
 import (
 	operatorv1 "github.com/openshift/api/operator/v1"
-	corev1 "k8s.io/api/core/v1"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -97,10 +95,10 @@ func DNSConfigMapName(dns *operatorv1.DNS) types.NamespacedName {
 }
 
 // ClientCABundleConfigMapName returns the namespaced name for the dns client ca config map.
-func ClientCABundleConfigMapName(cm *corev1.ConfigMap) types.NamespacedName {
+func ClientCABundleConfigMapName(sourceName string) types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: "openshift-dns",
-		Name:      "dns-client-cabundle-" + cm.Name,
+		Name:      "dns-client-cabundle-" + sourceName,
 	}
 }
 

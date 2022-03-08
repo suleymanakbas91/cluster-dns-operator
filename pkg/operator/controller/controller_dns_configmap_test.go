@@ -443,7 +443,7 @@ foo.com:5353 {
     prometheus 127.0.0.1:9153
     forward . tls://9.8.7.6 tls://[1001:AAAA:BBBB:CCCC::2222]:53 {
         tls_servername example.com
-        tls caBundle.crt
+        tls /etc/pki/example.com/caBundle.crt
         policy round_robin
     }
     cache 900 {
