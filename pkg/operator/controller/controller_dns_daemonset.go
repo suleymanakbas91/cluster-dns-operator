@@ -107,17 +107,17 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		case "dns":
 			daemonset.Spec.Template.Spec.Containers[i].Image = coreDNSImage
 			if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
-				logrus.Infof("got a cabundle for upstreamresolvers: %s", dns.Spec.UpstreamResolvers.CABundle.Name)
 				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
 				daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 				daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
+				logrus.Infof("got a cabundle for upstreamresolvers. Container name: [%s], Volume mounts: [%+v]", daemonset.Spec.Template.Spec.Containers[i].Name, daemonset.Spec.Template.Spec.Containers[i].VolumeMounts)
 			}
 			for _, server := range dns.Spec.Servers {
 				if server.ForwardPlugin.CABundle.Name != "" {
-					logrus.Infof("got a cabundle for forwardplugin: %s", server.ForwardPlugin.CABundle.Name)
 					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
 					daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 					daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
+					logrus.Infof("got a cabundle for forwardplugin. Container name: [%s], Volume mounts: [%+v]", daemonset.Spec.Template.Spec.Containers[i].Name, daemonset.Spec.Template.Spec.Containers[i].VolumeMounts)
 				}
 			}
 		case "kube-rbac-proxy":
@@ -134,14 +134,13 @@ func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.V
 	logrus.Infof("generating vols for %s and %s", caBundleName, serverName)
 	clientCAConfigmapName := ClientCABundleConfigMapName(caBundleName)
 	clientCAVolumeName := clientCAConfigmapName.Name
-	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s", serverName)
 	clientCABundleFilename := "caBundle.crt"
 	clientCAVolume := corev1.Volume{
 		Name: clientCAVolumeName,
 		VolumeSource: corev1.VolumeSource{
 			ConfigMap: &corev1.ConfigMapVolumeSource{
 				LocalObjectReference: corev1.LocalObjectReference{
-					Name: clientCAConfigmapName.Name,
+					Name: clientCAVolumeName,
 				},
 				Items: []corev1.KeyToPath{
 					{
@@ -152,6 +151,7 @@ func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.V
 			},
 		},
 	}
+	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s", serverName)
 	clientCAVolumeMount := corev1.VolumeMount{
 		Name:      clientCAVolumeName,
 		MountPath: clientCAVolumeMountPath,
