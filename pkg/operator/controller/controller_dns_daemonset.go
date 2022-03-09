@@ -110,14 +110,12 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
 				daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 				daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
-				logrus.Infof("got a cabundle for upstreamresolvers. Container name: [%s], Volume mounts: [%+v]", daemonset.Spec.Template.Spec.Containers[i].Name, daemonset.Spec.Template.Spec.Containers[i].VolumeMounts)
 			}
 			for _, server := range dns.Spec.Servers {
 				if server.ForwardPlugin.CABundle.Name != "" {
 					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
 					daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 					daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
-					logrus.Infof("got a cabundle for forwardplugin. Container name: [%s], Volume mounts: [%+v]", daemonset.Spec.Template.Spec.Containers[i].Name, daemonset.Spec.Template.Spec.Containers[i].VolumeMounts)
 				}
 			}
 		case "kube-rbac-proxy":
