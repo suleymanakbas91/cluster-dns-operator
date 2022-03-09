@@ -4,7 +4,13 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os/exec"
 	"reflect"
@@ -344,4 +350,82 @@ func conditionsMatchExpected(expected, actual map[string]string) bool {
 		}
 	}
 	return reflect.DeepEqual(expected, filtered)
+}
+
+// createCertPair creates a PEM encoded CA cert, serving cert, and private key for the serving cert.
+// The use case for this is testing DNS-over-TLS where we need to install a CA in cluster DNS and a serving cert + key
+// in the upstream resolver.
+func createCertPair() (pemEncodedCA, pemEncodedCert, pemEncodedCertPrivateKey *bytes.Buffer) {
+	// Fields common to both serving certs and CAs
+	certCommon := &x509.Certificate{
+		SerialNumber: big.NewInt(2019),
+		Subject: pkix.Name{
+			Organization:  []string{"Company, INC."},
+			Country:       []string{"US"},
+			Province:      []string{""},
+			Locality:      []string{"San Francisco"},
+			StreetAddress: []string{"Golden Gate Bridge"},
+			PostalCode:    []string{"94016"},
+		},
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().AddDate(0, 0, 7),
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:    x509.KeyUsageDigitalSignature,
+	}
+
+	// Make adjustments to the CA cert. These indicate that it's a CA cert and can sign other certs.
+	caCert := certCommon
+	caCert.IsCA = true
+	caCert.BasicConstraintsValid = true
+	caCert.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+
+	// Make adjustments to the serving cert. These indicate what IP address it should be used for.
+	cert := certCommon
+	cert.IPAddresses = []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
+	cert.SubjectKeyId = []byte{1, 2, 3, 4, 6}
+
+	caKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return err
+	}
+
+	certKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return err
+	}
+
+	rawCA, err := x509.CreateCertificate(rand.Reader, caCert, caCert, &caKey.PublicKey, caKey)
+	if err != nil {
+		return err
+	}
+
+	rawCert, err := x509.CreateCertificate(rand.Reader, cert, ca, &certKey.PublicKey, caKey)
+	if err != nil {
+		return err
+	}
+
+	pemEncodedCA := new(bytes.Buffer)
+	pem.Encode(pemEncodedCA, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: rawCA,
+	})
+
+	pemEncodedCert := new(bytes.Buffer)
+	pem.Encode(pemEncodedCert, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: rawCert,
+	})
+
+	pemEncodedCertPrivateKey := new(bytes.Buffer)
+	pem.Encode(pemEncodedCertPrivateKey, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(certKey),
+	})
+
+	servingCert, err := tls.X509KeyPair(pemEncodedCert, pemEncodedCertPrivateKey)
+	if err != nil {
+		return err
+	}
+
+	return pemEncodedCA, pemEncodedCert, pemEncodedCertPrivateKey
 }
