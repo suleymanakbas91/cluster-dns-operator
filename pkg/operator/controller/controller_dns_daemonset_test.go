@@ -106,9 +106,9 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 	}
 
 	cmMap := make(map[string]string)
-	cmMap["dns-client-cabundle-caClientBundle1"] = "dns-client-cabundle-caClientBundle1-10"
-	cmMap["dns-client-cabundle-caClientBundle2"] = "dns-client-cabundle-caClientBundle2-20"
-	cmMap["dns-client-cabundle-caClientBundle3"] = "dns-client-cabundle-caClientBundle3-30"
+	cmMap["caClientBundle1"] = "caClientBundle1-10"
+	cmMap["caClientBundle2"] = "caClientBundle2-20"
+	cmMap["caClientBundle3"] = "caClientBundle3-30"
 
 	if ds, err := desiredDNSDaemonSet(dns, coreDNSImage, kubeRBACProxyImage, cmMap); err != nil {
 		t.Errorf("invalid dns daemonset: %v", err)
@@ -198,17 +198,17 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 			},
 			"dns-client-cabundle-caClientBundle1": {
 				Name:      "dns-client-cabundle-caClientBundle1",
-				MountPath: "/etc/pki/dns.foo.com-dns-client-cabundle-caClientBundle1-10",
+				MountPath: "/etc/pki/dns.foo.com-caClientBundle1-10",
 				ReadOnly:  true,
 			},
 			"dns-client-cabundle-caClientBundle2": {
 				Name:      "dns-client-cabundle-caClientBundle2",
-				MountPath: "/etc/pki/dns.bar.com-dns-client-cabundle-caClientBundle2-20",
+				MountPath: "/etc/pki/dns.bar.com-caClientBundle2-20",
 				ReadOnly:  true,
 			},
 			"dns-client-cabundle-caClientBundle3": {
 				Name:      "dns-client-cabundle-caClientBundle3",
-				MountPath: "/etc/pki/example.com-dns-client-cabundle-caClientBundle3-30",
+				MountPath: "/etc/pki/example.com-caClientBundle3-30",
 				ReadOnly:  true,
 			},
 		}

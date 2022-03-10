@@ -152,7 +152,7 @@ func clientCACMVolAndVolMount(caBundleName string, serverName string, caBundleRe
 			},
 		},
 	}
-	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s-%s", serverName, caBundleRevisionMap[clientCAConfigmapName.Name])
+	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s-%s", serverName, caBundleRevisionMap[caBundleName])
 	clientCAVolumeMount := corev1.VolumeMount{
 		Name:      clientCAVolumeName,
 		MountPath: clientCAVolumeMountPath,

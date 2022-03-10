@@ -18,10 +18,10 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const resolvConf = "/etc/resolv.conf"
@@ -270,9 +270,12 @@ func corefileChanged(current, expected *corev1.ConfigMap) (bool, *corev1.ConfigM
 func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]string, error) {
 	caBundleRevisions := make(map[string]string)
 	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
+		sourceName := types.NamespacedName{
+			Namespace: GlobalUserSpecifiedConfigNamespace,
+			Name:      dns.Spec.UpstreamResolvers.CABundle.Name,
+		}
 		cm := &corev1.ConfigMap{}
-		destName := ClientCABundleConfigMapName(dns.Spec.UpstreamResolvers.CABundle.Name)
-		if err := client.Get(context.TODO(), destName, cm); err != nil {
+		if err := client.Get(context.TODO(), sourceName, cm); err != nil {
 			return caBundleRevisions, err
 		}
 		caBundleRevisions[dns.Spec.UpstreamResolvers.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
@@ -280,9 +283,12 @@ func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]
 
 	for _, server := range dns.Spec.Servers {
 		if server.ForwardPlugin.CABundle.Name != "" {
+			sourceName := types.NamespacedName{
+				Namespace: GlobalUserSpecifiedConfigNamespace,
+				Name:      server.ForwardPlugin.CABundle.Name,
+			}
 			cm := &corev1.ConfigMap{}
-			destName := ClientCABundleConfigMapName(server.ForwardPlugin.CABundle.Name)
-			if err := client.Get(context.TODO(), destName, cm); err != nil {
+			if err := client.Get(context.TODO(), sourceName, cm); err != nil {
 				return caBundleRevisions, err
 			}
 			caBundleRevisions[server.ForwardPlugin.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
