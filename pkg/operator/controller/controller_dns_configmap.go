@@ -38,11 +38,11 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     forward .{{range .Upstreams}} {{.}}{{end}} {
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
-		{{- if ne .CABundle.Name "" -}}
+        {{- if ne .CABundle.Name "" }}
         tls /etc/pki/{{.ServerName}}/caBundle.crt{{ index $.CABundleRevisionMap .CABundle.Name }}
-		{{- else}}
+        {{- else}}
         tls
-		{{- end}}
+        {{- end}}
         {{- end}}
         policy {{ CoreDNSForwardingPolicy .Policy }}
     }
@@ -284,7 +284,7 @@ func (r *reconciler) caBundleRevisionMap(dns *operatorv1.DNS) (map[string]string
 			if err := r.client.Get(context.TODO(), destName, cm); err != nil {
 				return caBundleRevisions, err
 			}
-			caBundleRevisions[server.ForwardPlugin.CABundle.Name] = fmt.Sprintf(" #%2s-%s", cm.Name, cm.ResourceVersion)
+			caBundleRevisions[server.ForwardPlugin.CABundle.Name] = fmt.Sprintf(" #%s-%s", cm.Name, cm.ResourceVersion)
 		}
 	}
 
