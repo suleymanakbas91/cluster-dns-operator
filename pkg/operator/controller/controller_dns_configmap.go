@@ -39,7 +39,7 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
 		{{- if ne .CABundle.Name "" -}}
-        tls /etc/pki/{{.ServerName}}/caBundle.crt
+        tls /etc/pki/{{.ServerName}}/caBundle.crt{{ index $.CABundleRevisionMap .CABundle.Name }}
 		{{- else}}
         tls
 		{{- end}}
@@ -77,7 +77,7 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
         {{- if ne .CABundle.Name "" }}
-        tls /etc/pki/{{.ServerName}}/caBundle.crt
+        tls /etc/pki/{{.ServerName}}/caBundle.crt{{ index $.CABundleRevisionMap .CABundle.Name }}
         {{- else}}
         tls
         {{- end}}
@@ -98,7 +98,11 @@ func (r *reconciler) ensureDNSConfigMap(dns *operatorv1.DNS, clusterDomain strin
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to get configmap: %v", err)
 	}
-	desired, err := desiredDNSConfigMap(dns, clusterDomain)
+	cmMap, err := r.caBundleRevisionMap(dns)
+	if err != nil {
+		return false, nil, err
+	}
+	desired, err := desiredDNSConfigMap(dns, clusterDomain, cmMap)
 	if err != nil {
 		return haveCM, current, fmt.Errorf("failed to build configmap: %v", err)
 	}
@@ -132,7 +136,7 @@ func (r *reconciler) currentDNSConfigMap(dns *operatorv1.DNS) (bool, *corev1.Con
 	return true, current, nil
 }
 
-func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.ConfigMap, error) {
+func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string, caBundleRevisionMap map[string]string) (*corev1.ConfigMap, error) {
 	if len(clusterDomain) == 0 {
 		clusterDomain = "cluster.local"
 	}
@@ -201,17 +205,19 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string) (*corev1.Con
 	}
 
 	corefileParameters := struct {
-		ClusterDomain     string
-		Servers           interface{}
-		UpstreamResolvers operatorv1.UpstreamResolvers
-		PolicyStr         func(policy operatorv1.ForwardingPolicy) string
-		LogLevel          string
+		ClusterDomain       string
+		Servers             interface{}
+		UpstreamResolvers   operatorv1.UpstreamResolvers
+		PolicyStr           func(policy operatorv1.ForwardingPolicy) string
+		LogLevel            string
+		CABundleRevisionMap map[string]string
 	}{
-		ClusterDomain:     clusterDomain,
-		Servers:           dns.Spec.Servers,
-		UpstreamResolvers: upstreamResolvers,
-		PolicyStr:         coreDNSPolicy,
-		LogLevel:          coreDNSLogLevel(dns),
+		ClusterDomain:       clusterDomain,
+		Servers:             dns.Spec.Servers,
+		UpstreamResolvers:   upstreamResolvers,
+		PolicyStr:           coreDNSPolicy,
+		LogLevel:            coreDNSLogLevel(dns),
+		CABundleRevisionMap: caBundleRevisionMap,
 	}
 	corefile := new(bytes.Buffer)
 	if err := corefileTemplate.Execute(corefile, corefileParameters); err != nil {
@@ -258,6 +264,31 @@ func corefileChanged(current, expected *corev1.ConfigMap) (bool, *corev1.ConfigM
 	updated := current.DeepCopy()
 	updated.Data = expected.Data
 	return true, updated
+}
+
+func (r *reconciler) caBundleRevisionMap(dns *operatorv1.DNS) (map[string]string, error) {
+	caBundleRevisions := make(map[string]string)
+	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
+		cm := &corev1.ConfigMap{}
+		destName := ClientCABundleConfigMapName(dns.Spec.UpstreamResolvers.CABundle.Name)
+		if err := r.client.Get(context.TODO(), destName, cm); err != nil {
+			return caBundleRevisions, err
+		}
+		caBundleRevisions[dns.Spec.UpstreamResolvers.CABundle.Name] = fmt.Sprintf(" #%s-%s", cm.Name, cm.ResourceVersion)
+	}
+
+	for _, server := range dns.Spec.Servers {
+		if server.ForwardPlugin.CABundle.Name != "" {
+			cm := &corev1.ConfigMap{}
+			destName := ClientCABundleConfigMapName(server.ForwardPlugin.CABundle.Name)
+			if err := r.client.Get(context.TODO(), destName, cm); err != nil {
+				return caBundleRevisions, err
+			}
+			caBundleRevisions[server.ForwardPlugin.CABundle.Name] = fmt.Sprintf(" #%2s-%s", cm.Name, cm.ResourceVersion)
+		}
+	}
+
+	return caBundleRevisions, nil
 }
 
 func coreDNSResolver(upstream operatorv1.Upstream, transport operatorv1.DNSTransport) (string, error) {

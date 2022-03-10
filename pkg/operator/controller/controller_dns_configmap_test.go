@@ -158,31 +158,34 @@ func TestDesiredDNSConfigmap(t *testing.T) {
 	// Ignore the error because if the Corefile doesn't match, the test will fail.
 	expectedCorefileToCheckIfForwardPluginTLS, _ := loadTestCorefile("forwardplugin_tls")
 
-	if cm, err := desiredDNSConfigMap(dns, clusterDomain); err != nil {
+	cmMap := make(map[string]string)
+	cmMap["cacerts"] = " #cacerts-2"
+
+	if cm, err := desiredDNSConfigMap(dns, clusterDomain, cmMap); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
 	} else if cm.Data["Corefile"] != expectedCorefile {
 		t.Errorf("unexpected Corefile; got:\n%s\nexpected:\n%s\n", cm.Data["Corefile"], expectedCorefile)
 	}
 
-	if cmToCheckNormaLogLevel, err := desiredDNSConfigMap(dnsToCheckNormalLogLevel, clusterDomain); err != nil {
+	if cmToCheckNormaLogLevel, err := desiredDNSConfigMap(dnsToCheckNormalLogLevel, clusterDomain, cmMap); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
 	} else if cmToCheckNormaLogLevel.Data["Corefile"] != expectedCorefileToCheckIfNormaLogLevelIsSet {
 		t.Errorf("unexpected Corefile; got:\n%s\nexpected:\n%s\n", cmToCheckNormaLogLevel.Data["Corefile"], expectedCorefileToCheckIfNormaLogLevelIsSet)
 	}
 
-	if cmToCheckDebugLogLevel, err := desiredDNSConfigMap(dnsToCheckDebugLogLevel, clusterDomain); err != nil {
+	if cmToCheckDebugLogLevel, err := desiredDNSConfigMap(dnsToCheckDebugLogLevel, clusterDomain, cmMap); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
 	} else if cmToCheckDebugLogLevel.Data["Corefile"] == expectedCorefileToCheckIfDebugLogLevelIsSet {
 		t.Errorf("unexpected Corefile; got:\n%s\nexpected:\n%s\n", cmToCheckDebugLogLevel.Data["Corefile"], expectedCorefileToCheckIfDebugLogLevelIsSet)
 	}
 
-	if cmToCheckTraceLogLevel, err := desiredDNSConfigMap(dnsToCheckTraceLogLevel, clusterDomain); err != nil {
+	if cmToCheckTraceLogLevel, err := desiredDNSConfigMap(dnsToCheckTraceLogLevel, clusterDomain, cmMap); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
 	} else if cmToCheckTraceLogLevel.Data["Corefile"] == expectedCorefileToCheckIfTraceLogLevelIsSet {
 		t.Errorf("unexpected Corefile; got:\n%s\nexpected:\n%s\n", cmToCheckTraceLogLevel.Data["Corefile"], expectedCorefileToCheckIfTraceLogLevelIsSet)
 	}
 
-	if cmToCheckForwardPluginTLS, err := desiredDNSConfigMap(dnsToCheckForwardPluginTLS, clusterDomain); err != nil {
+	if cmToCheckForwardPluginTLS, err := desiredDNSConfigMap(dnsToCheckForwardPluginTLS, clusterDomain, cmMap); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
 	} else if cmToCheckForwardPluginTLS.Data["Corefile"] == expectedCorefileToCheckIfForwardPluginTLS {
 		t.Errorf("unexpected Corefile; got:\n%s\nexpected:\n%s\n", cmToCheckForwardPluginTLS.Data["Corefile"], expectedCorefileToCheckIfForwardPluginTLS)
@@ -443,7 +446,7 @@ foo.com:5353 {
     prometheus 127.0.0.1:9153
     forward . tls://9.8.7.6 tls://[1001:AAAA:BBBB:CCCC::2222]:53 {
         tls_servername example.com
-        tls /etc/pki/example.com/caBundle.crt
+        tls /etc/pki/example.com/caBundle.crt #ca-bundle-config-1
         policy round_robin
     }
     cache 900 {
@@ -1334,10 +1337,12 @@ foo.com:5353 {
 	}
 
 	clusterDomain := "cluster.local"
+	cmMap := make(map[string]string)
+	cmMap["ca-bundle-config"] = " #ca-bundle-config-1"
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if cm, err := desiredDNSConfigMap(tc.dns, clusterDomain); err != nil {
+			if cm, err := desiredDNSConfigMap(tc.dns, clusterDomain, cmMap); err != nil {
 				if !errors.Is(err, tc.expectedError) {
 					t.Errorf("Unexpected error : %v", err)
 				}
@@ -1370,7 +1375,8 @@ func TestCannotConfigureForwardPluginTransportTLSWithoutServerName(t *testing.T)
 		},
 	}
 
-	_, err := desiredDNSConfigMap(dns, "cluster.local")
+	cmMap := make(map[string]string)
+	_, err := desiredDNSConfigMap(dns, "cluster.local", cmMap)
 
 	if !errors.Is(err, errTransportTLSConfiguredWithoutServerName) {
 		t.Errorf("Unexpected error occurred: %v", err)

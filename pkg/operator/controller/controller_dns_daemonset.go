@@ -129,7 +129,6 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 // clientCACMVolAndVolMount takes a CA bundle ConfigMap name and a TLS server name, and returns
 // the ConfigMap Volume and VolumeMount to be used for the DaemonSet.
 func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.Volume, *corev1.VolumeMount) {
-	logrus.Infof("generating vols for %s and %s", caBundleName, serverName)
 	clientCAConfigmapName := ClientCABundleConfigMapName(caBundleName)
 	clientCAVolumeName := clientCAConfigmapName.Name
 	clientCABundleFilename := "caBundle.crt"
