@@ -27,7 +27,11 @@ func (r *reconciler) ensureDNSDaemonSet(dns *operatorv1.DNS) (bool, *appsv1.Daem
 	if err != nil {
 		return false, nil, err
 	}
-	desired, err := desiredDNSDaemonSet(dns, r.CoreDNSImage, r.KubeRBACProxyImage)
+	cmMap, err := caBundleRevisionMap(r.client, dns)
+	if err != nil {
+		return false, nil, err
+	}
+	desired, err := desiredDNSDaemonSet(dns, r.CoreDNSImage, r.KubeRBACProxyImage, cmMap)
 	if err != nil {
 		return haveDS, current, fmt.Errorf("failed to build dns daemonset: %v", err)
 	}
@@ -65,7 +69,7 @@ func (r *reconciler) ensureDNSDaemonSetDeleted(dns *operatorv1.DNS) error {
 }
 
 // desiredDNSDaemonSet returns the desired dns daemonset.
-func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage string) (*appsv1.DaemonSet, error) {
+func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage string, caBundleRevisionMap map[string]string) (*appsv1.DaemonSet, error) {
 	daemonset := manifests.DNSDaemonSet()
 	name := DNSDaemonSetName(dns)
 	daemonset.Name = name.Name
@@ -107,13 +111,13 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		case "dns":
 			daemonset.Spec.Template.Spec.Containers[i].Image = coreDNSImage
 			if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
-				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName)
+				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.CABundle.Name, dns.Spec.UpstreamResolvers.ServerName, caBundleRevisionMap)
 				daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 				daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
 			}
 			for _, server := range dns.Spec.Servers {
 				if server.ForwardPlugin.CABundle.Name != "" {
-					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName)
+					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.CABundle.Name, server.ForwardPlugin.ServerName, caBundleRevisionMap)
 					daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 					daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
 				}
@@ -128,7 +132,7 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 
 // clientCACMVolAndVolMount takes a CA bundle ConfigMap name and a TLS server name, and returns
 // the ConfigMap Volume and VolumeMount to be used for the DaemonSet.
-func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.Volume, *corev1.VolumeMount) {
+func clientCACMVolAndVolMount(caBundleName string, serverName string, caBundleRevisionMap map[string]string) (*corev1.Volume, *corev1.VolumeMount) {
 	clientCAConfigmapName := ClientCABundleConfigMapName(caBundleName)
 	clientCAVolumeName := clientCAConfigmapName.Name
 	clientCABundleFilename := "caBundle.crt"
@@ -148,7 +152,7 @@ func clientCACMVolAndVolMount(caBundleName string, serverName string) (*corev1.V
 			},
 		},
 	}
-	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s", serverName)
+	clientCAVolumeMountPath := fmt.Sprintf("/etc/pki/%s-%s", serverName, caBundleRevisionMap[clientCAConfigmapName.Name])
 	clientCAVolumeMount := corev1.VolumeMount{
 		Name:      clientCAVolumeName,
 		MountPath: clientCAVolumeMountPath,

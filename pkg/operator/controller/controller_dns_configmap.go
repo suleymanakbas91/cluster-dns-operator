@@ -18,6 +18,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,7 +40,7 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
         {{- if ne .CABundle.Name "" }}
-        tls /etc/pki/{{.ServerName}}/caBundle.crt{{ index $.CABundleRevisionMap .CABundle.Name }}
+        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
         {{- else}}
         tls
         {{- end}}
@@ -77,7 +78,7 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
         {{- if ne .CABundle.Name "" }}
-        tls /etc/pki/{{.ServerName}}/caBundle.crt{{ index $.CABundleRevisionMap .CABundle.Name }}
+        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
         {{- else}}
         tls
         {{- end}}
@@ -98,7 +99,7 @@ func (r *reconciler) ensureDNSConfigMap(dns *operatorv1.DNS, clusterDomain strin
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to get configmap: %v", err)
 	}
-	cmMap, err := r.caBundleRevisionMap(dns)
+	cmMap, err := caBundleRevisionMap(r.client, dns)
 	if err != nil {
 		return false, nil, err
 	}
@@ -266,25 +267,25 @@ func corefileChanged(current, expected *corev1.ConfigMap) (bool, *corev1.ConfigM
 	return true, updated
 }
 
-func (r *reconciler) caBundleRevisionMap(dns *operatorv1.DNS) (map[string]string, error) {
+func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]string, error) {
 	caBundleRevisions := make(map[string]string)
 	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
 		cm := &corev1.ConfigMap{}
 		destName := ClientCABundleConfigMapName(dns.Spec.UpstreamResolvers.CABundle.Name)
-		if err := r.client.Get(context.TODO(), destName, cm); err != nil {
+		if err := client.Get(context.TODO(), destName, cm); err != nil {
 			return caBundleRevisions, err
 		}
-		caBundleRevisions[dns.Spec.UpstreamResolvers.CABundle.Name] = fmt.Sprintf(" #%s-%s", cm.Name, cm.ResourceVersion)
+		caBundleRevisions[dns.Spec.UpstreamResolvers.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
 	}
 
 	for _, server := range dns.Spec.Servers {
 		if server.ForwardPlugin.CABundle.Name != "" {
 			cm := &corev1.ConfigMap{}
 			destName := ClientCABundleConfigMapName(server.ForwardPlugin.CABundle.Name)
-			if err := r.client.Get(context.TODO(), destName, cm); err != nil {
+			if err := client.Get(context.TODO(), destName, cm); err != nil {
 				return caBundleRevisions, err
 			}
-			caBundleRevisions[server.ForwardPlugin.CABundle.Name] = fmt.Sprintf(" #%s-%s", cm.Name, cm.ResourceVersion)
+			caBundleRevisions[server.ForwardPlugin.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
 		}
 	}
 

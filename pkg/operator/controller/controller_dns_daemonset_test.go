@@ -23,7 +23,7 @@ func TestDesiredDNSDaemonset(t *testing.T) {
 		},
 	}
 
-	if ds, err := desiredDNSDaemonSet(dns, coreDNSImage, kubeRBACProxyImage); err != nil {
+	if ds, err := desiredDNSDaemonSet(dns, coreDNSImage, kubeRBACProxyImage, map[string]string{}); err != nil {
 		t.Errorf("invalid dns daemonset: %v", err)
 	} else {
 		// Validate the daemonset
@@ -105,7 +105,12 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 		},
 	}
 
-	if ds, err := desiredDNSDaemonSet(dns, coreDNSImage, kubeRBACProxyImage); err != nil {
+	cmMap := make(map[string]string)
+	cmMap["dns-client-cabundle-caClientBundle1"] = "dns-client-cabundle-caClientBundle1-10"
+	cmMap["dns-client-cabundle-caClientBundle2"] = "dns-client-cabundle-caClientBundle2-20"
+	cmMap["dns-client-cabundle-caClientBundle3"] = "dns-client-cabundle-caClientBundle3-30"
+
+	if ds, err := desiredDNSDaemonSet(dns, coreDNSImage, kubeRBACProxyImage, cmMap); err != nil {
 		t.Errorf("invalid dns daemonset: %v", err)
 	} else {
 		// Validate the volumes
@@ -193,17 +198,17 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 			},
 			"dns-client-cabundle-caClientBundle1": {
 				Name:      "dns-client-cabundle-caClientBundle1",
-				MountPath: "/etc/pki/dns.foo.com",
+				MountPath: "/etc/pki/dns.foo.com-dns-client-cabundle-caClientBundle1-10",
 				ReadOnly:  true,
 			},
 			"dns-client-cabundle-caClientBundle2": {
 				Name:      "dns-client-cabundle-caClientBundle2",
-				MountPath: "/etc/pki/dns.bar.com",
+				MountPath: "/etc/pki/dns.bar.com-dns-client-cabundle-caClientBundle2-20",
 				ReadOnly:  true,
 			},
 			"dns-client-cabundle-caClientBundle3": {
 				Name:      "dns-client-cabundle-caClientBundle3",
-				MountPath: "/etc/pki/example.com",
+				MountPath: "/etc/pki/example.com-dns-client-cabundle-caClientBundle3-30",
 				ReadOnly:  true,
 			},
 		}
@@ -254,7 +259,7 @@ func TestDesiredDNSDaemonsetNodePlacement(t *testing.T) {
 			},
 		},
 	}
-	if ds, err := desiredDNSDaemonSet(dns, "", ""); err != nil {
+	if ds, err := desiredDNSDaemonSet(dns, "", "", map[string]string{}); err != nil {
 		t.Errorf("invalid dns daemonset: %v", err)
 	} else {
 		actualNodeSelector := ds.Spec.Template.Spec.NodeSelector

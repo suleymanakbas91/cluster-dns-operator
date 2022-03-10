@@ -159,7 +159,7 @@ func TestDesiredDNSConfigmap(t *testing.T) {
 	expectedCorefileToCheckIfForwardPluginTLS, _ := loadTestCorefile("forwardplugin_tls")
 
 	cmMap := make(map[string]string)
-	cmMap["cacerts"] = " #cacerts-2"
+	cmMap["cacerts"] = "cacerts-2"
 
 	if cm, err := desiredDNSConfigMap(dns, clusterDomain, cmMap); err != nil {
 		t.Errorf("invalid dns configmap: %v", err)
@@ -446,7 +446,7 @@ foo.com:5353 {
     prometheus 127.0.0.1:9153
     forward . tls://9.8.7.6 tls://[1001:AAAA:BBBB:CCCC::2222]:53 {
         tls_servername example.com
-        tls /etc/pki/example.com/caBundle.crt #ca-bundle-config-1
+        tls /etc/pki/example.com-ca-bundle-config-1/caBundle.crt #ca-bundle-config-1
         policy round_robin
     }
     cache 900 {
@@ -1338,7 +1338,7 @@ foo.com:5353 {
 
 	clusterDomain := "cluster.local"
 	cmMap := make(map[string]string)
-	cmMap["ca-bundle-config"] = " #ca-bundle-config-1"
+	cmMap["ca-bundle-config"] = "ca-bundle-config-1"
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1375,8 +1375,7 @@ func TestCannotConfigureForwardPluginTransportTLSWithoutServerName(t *testing.T)
 		},
 	}
 
-	cmMap := make(map[string]string)
-	_, err := desiredDNSConfigMap(dns, "cluster.local", cmMap)
+	_, err := desiredDNSConfigMap(dns, "cluster.local", map[string]string{})
 
 	if !errors.Is(err, errTransportTLSConfiguredWithoutServerName) {
 		t.Errorf("Unexpected error occurred: %v", err)
