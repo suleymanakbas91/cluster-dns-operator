@@ -8,10 +8,12 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"math/big"
+	"net"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -252,8 +254,9 @@ func upstreamService(name, ns string) *corev1.Service {
 			Namespace: ns,
 		},
 		Spec: corev1.ServiceSpec{
-			Ports:    svcPorts,
-			Selector: map[string]string{"test": "upstream"},
+			ExternalName: "test.upstream.local",
+			Ports:        svcPorts,
+			Selector:     map[string]string{"test": "upstream"},
 		},
 	}
 }
@@ -355,7 +358,7 @@ func conditionsMatchExpected(expected, actual map[string]string) bool {
 // createCertPair creates a PEM encoded CA cert, serving cert, and private key for the serving cert.
 // The use case for this is testing DNS-over-TLS where we need to install a CA in cluster DNS and a serving cert + key
 // in the upstream resolver.
-func createCertPair() (pemEncodedCA, pemEncodedCert, pemEncodedCertPrivateKey *bytes.Buffer) {
+func createCertPair() (pemEncodedCA string, pemEncodedCert string, pemEncodedCertPrivateKey string) {
 	// Fields common to both serving certs and CAs
 	certCommon := &x509.Certificate{
 		SerialNumber: big.NewInt(2019),
@@ -384,48 +387,75 @@ func createCertPair() (pemEncodedCA, pemEncodedCert, pemEncodedCertPrivateKey *b
 	cert.IPAddresses = []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
 	cert.SubjectKeyId = []byte{1, 2, 3, 4, 6}
 
-	caKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return err
-	}
+	caKey, _ := rsa.GenerateKey(rand.Reader, 4096)
+	//if err != nil {
+	//	return err
+	//}
 
-	certKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return err
-	}
+	certKey, _ := rsa.GenerateKey(rand.Reader, 4096)
+	//if err != nil {
+	//	errs = append(errs, err)
+	//}
 
-	rawCA, err := x509.CreateCertificate(rand.Reader, caCert, caCert, &caKey.PublicKey, caKey)
-	if err != nil {
-		return err
-	}
+	rawCA, _ := x509.CreateCertificate(rand.Reader, caCert, caCert, &caKey.PublicKey, caKey)
+	//if err != nil {
+	//	errs = append(errs, err)
+	//}
 
-	rawCert, err := x509.CreateCertificate(rand.Reader, cert, ca, &certKey.PublicKey, caKey)
-	if err != nil {
-		return err
-	}
+	rawCert, _ := x509.CreateCertificate(rand.Reader, cert, caCert, &certKey.PublicKey, caKey)
+	//if err != nil {
+	//	errs = append(errs, err)
+	//}
 
-	pemEncodedCA := new(bytes.Buffer)
-	pem.Encode(pemEncodedCA, &pem.Block{
+	pemCA := new(bytes.Buffer)
+	pem.Encode(pemCA, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: rawCA,
 	})
 
-	pemEncodedCert := new(bytes.Buffer)
-	pem.Encode(pemEncodedCert, &pem.Block{
+	pemCert := new(bytes.Buffer)
+	pem.Encode(pemCert, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: rawCert,
 	})
 
-	pemEncodedCertPrivateKey := new(bytes.Buffer)
-	pem.Encode(pemEncodedCertPrivateKey, &pem.Block{
+	pemCertPrivateKey := new(bytes.Buffer)
+	pem.Encode(pemCertPrivateKey, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(certKey),
 	})
 
-	servingCert, err := tls.X509KeyPair(pemEncodedCert, pemEncodedCertPrivateKey)
-	if err != nil {
-		return err
-	}
+	//servingCert, err := tls.X509KeyPair(pemCert.Bytes(), pemCertPrivateKey.Bytes())
+	//if err != nil {
+	//	errs = append(errs, err)
+	//}
 
-	return pemEncodedCA, pemEncodedCert, pemEncodedCertPrivateKey
+	return pemCA.String(), pemCert.String(), pemCertPrivateKey.String() //, errs
+}
+
+func upstreamTLSVolumeAndMount(configMap *corev1.ConfigMap) (*corev1.Volume, *corev1.VolumeMount) {
+	volumeName := configMap.Name
+
+	items := []corev1.KeyToPath{}
+	for k, _ := range configMap.Data {
+		items = append(items, corev1.KeyToPath{Key: k, Path: k})
+	}
+	volume := corev1.Volume{
+		Name: volumeName,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: volumeName,
+				},
+				Items: items,
+			},
+		},
+	}
+	volumeMountPath := fmt.Sprintf("/tmp/%s", volumeName)
+	volumeMount := corev1.VolumeMount{
+		Name:      volumeName,
+		MountPath: volumeMountPath,
+		ReadOnly:  true,
+	}
+	return &volume, &volumeMount
 }

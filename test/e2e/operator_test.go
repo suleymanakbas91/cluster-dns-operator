@@ -54,7 +54,7 @@ const (
     hosts {
       1.2.3.4 www.foo.com
     }
-	tls cert.pem key.pem ca.pem
+	tls /tmp/tls/cert /tmp/tls/key
     health
     errors
     log
@@ -494,10 +494,6 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create the CA, serving cert, and serving cert private key.
-	// The CA goes in the cluster dns operator and the serving cert + key go into the upstream resolver.
-	ca, cert, key := createCertPair()
-
 	// Create the upstream resolver ConfigMap.
 	upstreamCfgMap := buildConfigMap(upstreamPodName, upstreamPodNs, "Corefile", upstreamTLSCorefile)
 	if err := cl.Create(context.TODO(), upstreamCfgMap); err != nil {
@@ -543,7 +539,36 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		}
 	}()
 
-	// TODO add a volume with cert and key to the upstream resolver
+	// Create the CA, serving cert, and serving cert private key.
+	// The CA goes in the cluster dns operator and the serving cert + key go into the upstream resolver.
+	ca, cert, key := createCertPair()
+
+	// Create the ConfigMap to hold the upstream cert and key data
+	upstreamTLSConfigMapData := make(map[string]string)
+	upstreamTLSConfigMapData["cert"] = cert
+	upstreamTLSConfigMapData["key"] = key
+	upstreamTLSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tls",
+			Namespace: upstreamPodNs,
+		},
+		Data: upstreamTLSConfigMapData,
+	}
+
+	// Create the upstream resolver TLS ConfigMap.
+	if err := cl.Create(context.TODO(), upstreamTLSConfigMap); err != nil {
+		t.Fatalf("failed to create configmap %s/%s: %v", upstreamTLSConfigMap.Namespace, upstreamTLSConfigMap.Name, err)
+	}
+	defer func() {
+		if err := cl.Delete(context.TODO(), upstreamTLSConfigMap); err != nil {
+			t.Fatalf("failed to delete configmap %s/%s: %v", upstreamTLSConfigMap.Namespace, upstreamTLSConfigMap.Name, err)
+		}
+	}()
+
+	tlsVolume, tlsVolumeMount := upstreamTLSVolumeAndMount(upstreamTLSConfigMap)
+
+	upstreamResolver.Spec.Volumes = append(upstreamResolver.Spec.Volumes, *tlsVolume)
+	upstreamResolver.Spec.Containers[0].VolumeMounts = append(upstreamResolver.Spec.Containers[0].VolumeMounts, *tlsVolumeMount)
 
 	// Wait for the upstream resolver Pod to be ready.
 	name := types.NamespacedName{Namespace: upstreamResolver.Namespace, Name: upstreamResolver.Name}
@@ -581,19 +606,41 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		t.Fatalf("failed to get clusterIP for service %s/%s", upstreamSvc.Namespace, upstreamSvc.Name)
 	}
 
+	// Create the ConfigMap to hold the cert and key data
+	downstreamTLSConfigMapData := make(map[string]string)
+	downstreamTLSConfigMapData["caBundle.crt"] = ca
+	downstreamTLSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dns-over-tls-ca",
+			Namespace: "openshift-config",
+		},
+		Data: downstreamTLSConfigMapData,
+	}
+
+	// Create the upstream resolver TLS ConfigMap.
+	if err := cl.Create(context.TODO(), downstreamTLSConfigMap); err != nil {
+		t.Fatalf("failed to create configmap %s/%s: %v", downstreamTLSConfigMap.Namespace, downstreamTLSConfigMap.Name, err)
+	}
+	defer func() {
+		if err := cl.Delete(context.TODO(), downstreamTLSConfigMap); err != nil {
+			t.Fatalf("failed to delete configmap %s/%s: %v", downstreamTLSConfigMap.Namespace, downstreamTLSConfigMap.Name, err)
+		}
+	}()
+
 	// Update cluster DNS forwarding with the upstream resolver's Service IP address.
 	defaultDNS := &operatorv1.DNS{}
 	if err := cl.Get(context.TODO(), types.NamespacedName{Name: operatorcontroller.DefaultDNSController}, defaultDNS); err != nil {
 		t.Fatalf("failed to get default dns: %v", err)
 	}
 
-	// TODO add TLS configuration here
-	// TODO need to find out (or add) a domain name for the upstream service to use with ServerName
 	upstream := operatorv1.Server{
 		Name:  "test",
 		Zones: []string{"foo.com"},
 		ForwardPlugin: operatorv1.ForwardPlugin{
-			Upstreams: []string{upstreamIP},
+			Transport:  "tls",
+			ServerName: "test.upstream.local",
+			CABundle:   configv1.ConfigMapNameReference{Name: "dns-over-tls-ca"},
+			Upstreams:  []string{upstreamIP},
 		},
 	}
 	defaultDNS.Spec.Servers = []operatorv1.Server{upstream}
@@ -633,11 +680,9 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		t.Fatalf("failed to list pods for dns daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
 	}
 
-	// TODO update the command to search for the expected tls string(s) in the corefile
-	// TODO should be something like tls_servername [upstream resolver service fqdn]
 	catCmd := []string{"cat", "/etc/coredns/Corefile"}
 	for _, pod := range defaultDNSPods.Items {
-		if err := lookForStringInPodExec(pod.Namespace, pod.Name, "dns", catCmd, upstreamIP, 2*time.Minute); err != nil {
+		if err := lookForStringInPodExec(pod.Namespace, pod.Name, "dns", catCmd, "test.upstream.local", 2*time.Minute); err != nil {
 			// If we failed to find the expected IP in the pod's corefile, log the pod's status.
 			currPod := &corev1.Pod{}
 			if err := cl.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, currPod); err != nil {
