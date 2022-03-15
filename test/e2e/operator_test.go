@@ -636,10 +636,12 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		Name:  "test",
 		Zones: []string{"foo.com"},
 		ForwardPlugin: operatorv1.ForwardPlugin{
-			Transport:  "tls",
-			ServerName: "test.upstream.local",
-			CABundle:   configv1.ConfigMapNameReference{Name: "dns-over-tls-ca"},
-			Upstreams:  []string{upstreamIP},
+			TransportConfig: operatorv1.DNSOverTLSConfig{
+				Transport:  operatorv1.TLSTransport,
+				ServerName: "test.upstream.local",
+				CABundle:   configv1.ConfigMapNameReference{Name: "dns-over-tls-ca"},
+			},
+			Upstreams: []string{upstreamIP},
 		},
 	}
 	defaultDNS.Spec.Servers = []operatorv1.Server{upstream}
