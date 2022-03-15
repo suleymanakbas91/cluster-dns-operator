@@ -665,6 +665,9 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	if err := cl.Get(context.TODO(), operatorcontroller.DNSDaemonSetName(defaultDNS), dnsDaemonSet); err != nil {
 		_ = fmt.Errorf("failed to get daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
 	}
+
+	// TODO add a wait here to check that all of the daemonset pods have been rolled out.
+
 	selector, err := metav1.LabelSelectorAsSelector(dnsDaemonSet.Spec.Selector)
 	if err != nil {
 		t.Fatalf("daemonset %s/%s has invalid spec.selector: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
