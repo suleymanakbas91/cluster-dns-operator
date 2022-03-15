@@ -494,8 +494,8 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create the upstream resolver ConfigMap.
-	upstreamCfgMap := buildConfigMap(upstreamPodName, upstreamPodNs, "Corefile", upstreamTLSCorefile)
+	// Create the upstream-tls-1 resolver ConfigMap.
+	upstreamCfgMap := buildConfigMap("upstream-tls-corefile", upstreamPodNs, "Corefile", upstreamTLSCorefile)
 	if err := cl.Create(context.TODO(), upstreamCfgMap); err != nil {
 		t.Fatalf("failed to create configmap %s/%s: %v", upstreamCfgMap.Namespace, upstreamCfgMap.Name, err)
 	}
@@ -506,7 +506,7 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	}()
 
 	// Create the CA, serving cert, and serving cert private key.
-	// The CA goes in the cluster dns operator and the serving cert + key go into the upstream resolver.
+	// The CA goes in the cluster dns operator and the serving cert + key go into the upstream resolvers.
 	ca, cert, key := createCertPair()
 
 	// Create the ConfigMap to hold the upstream cert and key data
@@ -554,41 +554,47 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		t.Fatalf("version %s not found for clusteroperator %s", statuscontroller.CoreDNSVersionName, opName)
 	}
 
+	upstreamPods := []*corev1.Pod{}
+
 	// Create the upstream resolver Pod.
-	upstreamResolver := upstreamPod(upstreamPodName, upstreamPodNs, coreImage, upstreamPodName)
+	upstreamPods = append(upstreamPods, upstreamPod("upstream-tls-1", upstreamPodNs, coreImage, "tls"))
+	upstreamPods = append(upstreamPods, upstreamPod("upstream-tls-2", upstreamPodNs, coreImage, "tls"))
+
 	tlsVolume, tlsVolumeMount := upstreamTLSVolumeAndMount(upstreamTLSConfigMap)
-	upstreamResolver.Spec.Volumes = append(upstreamResolver.Spec.Volumes, *tlsVolume)
-	upstreamResolver.Spec.Containers[0].VolumeMounts = append(upstreamResolver.Spec.Containers[0].VolumeMounts, *tlsVolumeMount)
+	for _, upstream := range upstreamPods {
+		upstream.Spec.Volumes = append(upstream.Spec.Volumes, *tlsVolume)
+		upstream.Spec.Containers[0].VolumeMounts = append(upstream.Spec.Containers[0].VolumeMounts, *tlsVolumeMount)
 
-	if err := cl.Create(context.TODO(), upstreamResolver); err != nil {
-		t.Fatalf("failed to create pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
-	}
-	defer func() {
-		if err := cl.Delete(context.TODO(), upstreamResolver); err != nil {
-			t.Fatalf("failed to delete pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
+		if err := cl.Create(context.TODO(), upstream); err != nil {
+			t.Fatalf("failed to create pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
 		}
-	}()
-
-	// Wait for the upstream resolver Pod to be ready.
-	name := types.NamespacedName{Namespace: upstreamResolver.Namespace, Name: upstreamResolver.Name}
-	err = wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
-		if err := cl.Get(context.TODO(), name, upstreamResolver); err != nil {
-			t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
-			return false, nil
-		}
-		for _, cond := range upstreamResolver.Status.Conditions {
-			if cond.Type == corev1.ContainersReady && cond.Status == corev1.ConditionTrue {
-				return true, nil
+		defer func() {
+			if err := cl.Delete(context.TODO(), upstream); err != nil {
+				t.Fatalf("failed to delete pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
 			}
+		}()
+
+		// Wait for the upstream resolver Pods to be ready.
+		name := types.NamespacedName{Namespace: upstream.Namespace, Name: upstream.Name}
+		err = wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
+			if err := cl.Get(context.TODO(), name, upstream); err != nil {
+				t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
+				return false, nil
+			}
+			for _, cond := range upstream.Status.Conditions {
+				if cond.Type == corev1.ContainersReady && cond.Status == corev1.ConditionTrue {
+					return true, nil
+				}
+			}
+			return false, nil
+		})
+		if err != nil {
+			t.Fatalf("failed to observe ContainersReady condition for pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
 		}
-		return false, nil
-	})
-	if err != nil {
-		t.Fatalf("failed to observe ContainersReady condition for pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
 	}
 
 	// Create the upstream resolver Service and get the ClusterIP.
-	upstreamSvc := upstreamService(upstreamPodName, upstreamPodNs)
+	upstreamSvc := upstreamService("upstream-tls-svc", upstreamPodNs)
 	if err := cl.Create(context.TODO(), upstreamSvc); err != nil {
 		t.Fatalf("failed to create service %s/%s: %v", upstreamSvc.Namespace, upstreamSvc.Name, err)
 	}
@@ -616,7 +622,7 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		Data: downstreamTLSConfigMapData,
 	}
 
-	// Create the upstream resolver TLS ConfigMap.
+	// Create the downstream resolver TLS ConfigMap.
 	if err := cl.Create(context.TODO(), downstreamTLSConfigMap); err != nil {
 		t.Fatalf("failed to create configmap %s/%s: %v", downstreamTLSConfigMap.Namespace, downstreamTLSConfigMap.Name, err)
 	}
@@ -713,7 +719,7 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	}
 
 	// Create the client Pod.
-	testClient := buildPod("test-client", "default", cliImage, []string{"sleep", "3600"})
+	testClient := buildPod("test-client-tls", "default", cliImage, []string{"sleep", "3600"})
 	if err := cl.Create(context.TODO(), testClient); err != nil {
 		t.Fatalf("failed to create pod %s/%s: %v", testClient.Namespace, testClient.Name, err)
 	}
@@ -723,7 +729,7 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		}
 	}()
 	// Wait for the client Pod to be ready.
-	name = types.NamespacedName{Namespace: testClient.Namespace, Name: testClient.Name}
+	name := types.NamespacedName{Namespace: testClient.Namespace, Name: testClient.Name}
 	err = wait.PollImmediate(1*time.Second, 60*time.Second, func() (bool, error) {
 		if err := cl.Get(context.TODO(), name, testClient); err != nil {
 			t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
@@ -748,8 +754,10 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	}
 	// Scrape the upstream resolver logs for the "NOERROR" message.
 	logMsg := "NOERROR"
-	if err := lookForStringInPodLog(upstreamResolver.Namespace, upstreamResolver.Name, upstreamResolver.Name, logMsg, 120*time.Second); err != nil {
-		t.Fatalf("failed to parse %q from pod %s/%s logs: %v", logMsg, upstreamResolver.Namespace, upstreamResolver.Name, err)
+	for _, upstream := range upstreamPods {
+		if err := lookForStringInPodLog(upstream.Namespace, upstream.Name, upstream.Name, logMsg, 120*time.Second); err != nil {
+			t.Fatalf("failed to parse %q from pod %s/%s logs: %v", logMsg, upstream.Namespace, upstream.Name, err)
+		}
 	}
 
 	// TODO Is there anything special we need to do to validate TLS?
