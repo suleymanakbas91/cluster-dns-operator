@@ -54,7 +54,7 @@ const (
     hosts {
       1.2.3.4 www.foo.com
     }
-	tls /tmp/tls/cert /tmp/tls/key
+	tls /etc/coredns/cert /etc/coredns/key
     health
     errors
     log
@@ -494,17 +494,6 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create the upstream-tls-1 resolver ConfigMap.
-	upstreamCfgMap := buildConfigMap("upstream-tls-corefile", upstreamPodNs, "Corefile", upstreamTLSCorefile)
-	if err := cl.Create(context.TODO(), upstreamCfgMap); err != nil {
-		t.Fatalf("failed to create configmap %s/%s: %v", upstreamCfgMap.Namespace, upstreamCfgMap.Name, err)
-	}
-	defer func() {
-		if err := cl.Delete(context.TODO(), upstreamCfgMap); err != nil {
-			t.Fatalf("failed to delete configmap %s/%s: %v", upstreamCfgMap.Namespace, upstreamCfgMap.Name, err)
-		}
-	}()
-
 	// Create the CA, serving cert, and serving cert private key.
 	// The CA goes in the cluster dns operator and the serving cert + key go into the upstream resolvers.
 	ca, cert, key := createCertPair()
@@ -513,9 +502,11 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	upstreamTLSConfigMapData := make(map[string]string)
 	upstreamTLSConfigMapData["cert"] = cert
 	upstreamTLSConfigMapData["key"] = key
+	upstreamTLSConfigMapData["Corefile"] = upstreamTLSCorefile
+
 	upstreamTLSConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "tls",
+			Name:      "upstream-tls",
 			Namespace: upstreamPodNs,
 		},
 		Data: upstreamTLSConfigMapData,
@@ -557,14 +548,10 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	upstreamPods := []*corev1.Pod{}
 
 	// Create the upstream resolver Pod.
-	upstreamPods = append(upstreamPods, upstreamPod("upstream-tls-1", upstreamPodNs, coreImage, "tls"))
-	upstreamPods = append(upstreamPods, upstreamPod("upstream-tls-2", upstreamPodNs, coreImage, "tls"))
+	upstreamPods = append(upstreamPods, upstreamTLSPod("upstream-tls-1", upstreamPodNs, coreImage, upstreamTLSConfigMap))
+	upstreamPods = append(upstreamPods, upstreamTLSPod("upstream-tls-2", upstreamPodNs, coreImage, upstreamTLSConfigMap))
 
-	tlsVolume, tlsVolumeMount := upstreamTLSVolumeAndMount(upstreamTLSConfigMap)
 	for _, upstream := range upstreamPods {
-		upstream.Spec.Volumes = append(upstream.Spec.Volumes, *tlsVolume)
-		upstream.Spec.Containers[0].VolumeMounts = append(upstream.Spec.Containers[0].VolumeMounts, *tlsVolumeMount)
-
 		if err := cl.Create(context.TODO(), upstream); err != nil {
 			t.Fatalf("failed to create pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
 		}

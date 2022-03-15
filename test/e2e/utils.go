@@ -231,6 +231,68 @@ func upstreamPod(name, ns, image, cfgMap string) *corev1.Pod {
 	}
 }
 
+func upstreamTLSPod(name, ns, image string, configMap *corev1.ConfigMap) *corev1.Pod {
+	coreContainer := upstreamContainer(name, image)
+	volumeName := configMap.Name
+
+	items := []corev1.KeyToPath{}
+	for k, _ := range configMap.Data {
+		items = append(items, corev1.KeyToPath{Key: k, Path: k})
+	}
+	volume := corev1.Volume{
+		Name: "config-volume",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: volumeName,
+				},
+				Items: items,
+			},
+		},
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+			Labels:    map[string]string{"test": "upstream-tls"},
+		},
+		Spec: corev1.PodSpec{
+			Volumes:            []corev1.Volume{volume},
+			Containers:         []corev1.Container{coreContainer},
+			ServiceAccountName: "dns",
+		},
+	}
+}
+
+//func upstreamVolume(configMap *corev1.ConfigMap) (*corev1.Volume, *corev1.VolumeMount) {
+func upstreamVolume(configMap *corev1.ConfigMap) *corev1.Volume {
+	volumeName := configMap.Name
+
+	items := []corev1.KeyToPath{}
+	for k, _ := range configMap.Data {
+		items = append(items, corev1.KeyToPath{Key: k, Path: k})
+	}
+	volume := corev1.Volume{
+		Name: volumeName,
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: volumeName,
+				},
+				Items: items,
+			},
+		},
+	}
+	//volumeMountPath := fmt.Sprintf("/tmp/%s", volumeName)
+	//volumeMount := corev1.VolumeMount{
+	//	Name:      volumeName,
+	//	MountPath: volumeMountPath,
+	//	ReadOnly:  true,
+	//}
+	//return &volume, &volumeMount
+	return &volume
+}
+
 // upstreamService returns a Service definition configured for the
 // test upstream resolver.
 func upstreamService(name, ns string) *corev1.Service {
@@ -431,31 +493,4 @@ func createCertPair() (pemEncodedCA string, pemEncodedCert string, pemEncodedCer
 	//}
 
 	return pemCA.String(), pemCert.String(), pemCertPrivateKey.String() //, errs
-}
-
-func upstreamTLSVolumeAndMount(configMap *corev1.ConfigMap) (*corev1.Volume, *corev1.VolumeMount) {
-	volumeName := configMap.Name
-
-	items := []corev1.KeyToPath{}
-	for k, _ := range configMap.Data {
-		items = append(items, corev1.KeyToPath{Key: k, Path: k})
-	}
-	volume := corev1.Volume{
-		Name: volumeName,
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: volumeName,
-				},
-				Items: items,
-			},
-		},
-	}
-	volumeMountPath := fmt.Sprintf("/tmp/%s", volumeName)
-	volumeMount := corev1.VolumeMount{
-		Name:      volumeName,
-		MountPath: volumeMountPath,
-		ReadOnly:  true,
-	}
-	return &volume, &volumeMount
 }
