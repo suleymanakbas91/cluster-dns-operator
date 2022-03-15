@@ -505,40 +505,6 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		}
 	}()
 
-	// Get the CoreDNS image used by the test upstream resolver.
-	co := &configv1.ClusterOperator{}
-	if err := cl.Get(context.TODO(), opName, co); err != nil {
-		t.Fatalf("failed to get clusteroperator %s: %v", opName, err)
-	}
-	var (
-		coreImage      string
-		coreImageFound bool
-	)
-	for _, ver := range co.Status.Versions {
-		if ver.Name == statuscontroller.CoreDNSVersionName {
-			if len(ver.Version) == 0 {
-				t.Fatalf("clusteroperator %s has empty coredns version", opName)
-			}
-			coreImageFound = true
-			coreImage = ver.Version
-			break
-		}
-	}
-	if !coreImageFound {
-		t.Fatalf("version %s not found for clusteroperator %s", statuscontroller.CoreDNSVersionName, opName)
-	}
-
-	// Create the upstream resolver Pod.
-	upstreamResolver := upstreamPod(upstreamPodName, upstreamPodNs, coreImage, upstreamPodName)
-	if err := cl.Create(context.TODO(), upstreamResolver); err != nil {
-		t.Fatalf("failed to create pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
-	}
-	defer func() {
-		if err := cl.Delete(context.TODO(), upstreamResolver); err != nil {
-			t.Fatalf("failed to delete pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
-		}
-	}()
-
 	// Create the CA, serving cert, and serving cert private key.
 	// The CA goes in the cluster dns operator and the serving cert + key go into the upstream resolver.
 	ca, cert, key := createCertPair()
@@ -565,10 +531,43 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		}
 	}()
 
-	tlsVolume, tlsVolumeMount := upstreamTLSVolumeAndMount(upstreamTLSConfigMap)
+	// Get the CoreDNS image used by the test upstream resolver.
+	co := &configv1.ClusterOperator{}
+	if err := cl.Get(context.TODO(), opName, co); err != nil {
+		t.Fatalf("failed to get clusteroperator %s: %v", opName, err)
+	}
+	var (
+		coreImage      string
+		coreImageFound bool
+	)
+	for _, ver := range co.Status.Versions {
+		if ver.Name == statuscontroller.CoreDNSVersionName {
+			if len(ver.Version) == 0 {
+				t.Fatalf("clusteroperator %s has empty coredns version", opName)
+			}
+			coreImageFound = true
+			coreImage = ver.Version
+			break
+		}
+	}
+	if !coreImageFound {
+		t.Fatalf("version %s not found for clusteroperator %s", statuscontroller.CoreDNSVersionName, opName)
+	}
 
+	// Create the upstream resolver Pod.
+	upstreamResolver := upstreamPod(upstreamPodName, upstreamPodNs, coreImage, upstreamPodName)
+	tlsVolume, tlsVolumeMount := upstreamTLSVolumeAndMount(upstreamTLSConfigMap)
 	upstreamResolver.Spec.Volumes = append(upstreamResolver.Spec.Volumes, *tlsVolume)
 	upstreamResolver.Spec.Containers[0].VolumeMounts = append(upstreamResolver.Spec.Containers[0].VolumeMounts, *tlsVolumeMount)
+
+	if err := cl.Create(context.TODO(), upstreamResolver); err != nil {
+		t.Fatalf("failed to create pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
+	}
+	defer func() {
+		if err := cl.Delete(context.TODO(), upstreamResolver); err != nil {
+			t.Fatalf("failed to delete pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
+		}
+	}()
 
 	// Wait for the upstream resolver Pod to be ready.
 	name := types.NamespacedName{Namespace: upstreamResolver.Namespace, Name: upstreamResolver.Name}
