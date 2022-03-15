@@ -37,10 +37,10 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     {{with .ForwardPlugin -}}
     prometheus 127.0.0.1:9153
     forward .{{range .Upstreams}} {{.}}{{end}} {
-        {{- if ne .ServerName "" }}
-        tls_servername {{.ServerName}}
-        {{- if ne .CABundle.Name "" }}
-        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
+        {{- if ne .TransportConfig.ServerName "" }}
+        tls_servername {{.TransportConfig.ServerName}}
+        {{- if ne .TransportConfig.CABundle.Name "" }}
+        tls /etc/pki/{{.TransportConfig.ServerName}}-{{ index $.CABundleRevisionMap .TransportConfig.CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .TransportConfig.CABundle.Name) }}
         {{- else}}
         tls
         {{- end}}
@@ -74,11 +74,11 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
     }
     prometheus 127.0.0.1:9153
 	{{- with .UpstreamResolvers }}
-    forward .{{range .Upstreams}} {{UpstreamResolver . $.UpstreamResolvers.Transport}}{{end}} {
-        {{- if ne .ServerName "" }}
-        tls_servername {{.ServerName}}
-        {{- if ne .CABundle.Name "" }}
-        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
+    forward .{{range .Upstreams}} {{UpstreamResolver . $.UpstreamResolvers.TransportConfig.Transport}}{{end}} {
+        {{- if ne .TransportConfig.ServerName "" }}
+        tls_servername {{.TransportConfig.ServerName}}
+        {{- if ne .TransportConfig.CABundle.Name "" }}
+        tls /etc/pki/{{.TransportConfig.ServerName}}-{{ index $.CABundleRevisionMap .TransportConfig.CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .TransportConfig.CABundle.Name) }}
         {{- else}}
         tls
         {{- end}}
@@ -144,8 +144,8 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string, caBundleRevi
 
 	// Ensure that Transport: tls cannot be configured without a ServerName
 	for _, server := range dns.Spec.Servers {
-		t := server.ForwardPlugin.Transport
-		sn := server.ForwardPlugin.ServerName
+		t := server.ForwardPlugin.TransportConfig.Transport
+		sn := server.ForwardPlugin.TransportConfig.ServerName
 
 		// For security purposes, ServerName MUST be set when Transport is tls
 		if t == operatorv1.TLSTransport && sn == "" {
@@ -158,7 +158,7 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string, caBundleRevi
 		}
 	}
 
-	if dns.Spec.UpstreamResolvers.Transport == operatorv1.TLSTransport && dns.Spec.UpstreamResolvers.ServerName == "" {
+	if dns.Spec.UpstreamResolvers.TransportConfig.Transport == operatorv1.TLSTransport && dns.Spec.UpstreamResolvers.TransportConfig.ServerName == "" {
 		return nil, errTransportTLSConfiguredWithoutServerName
 	}
 
@@ -168,8 +168,10 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string, caBundleRevi
 				Type: operatorv1.SystemResolveConfType,
 			},
 		},
-		Policy:    operatorv1.SequentialForwardingPolicy,
-		Transport: operatorv1.CleartextTransport,
+		Policy: operatorv1.SequentialForwardingPolicy,
+		TransportConfig: operatorv1.DNSOverTLSConfig{
+			Transport: operatorv1.CleartextTransport,
+		},
 	}
 
 	if len(dns.Spec.UpstreamResolvers.Upstreams) > 0 {
@@ -195,12 +197,12 @@ func desiredDNSConfigMap(dns *operatorv1.DNS, clusterDomain string, caBundleRevi
 		upstreamResolvers.Policy = dns.Spec.UpstreamResolvers.Policy
 	}
 
-	if dns.Spec.UpstreamResolvers.Transport == operatorv1.TLSTransport {
-		if dns.Spec.UpstreamResolvers.ServerName != "" { //TODO: print a warning about the ignored TLS configuration
-			upstreamResolvers.Transport = operatorv1.TLSTransport
-			upstreamResolvers.ServerName = dns.Spec.UpstreamResolvers.ServerName
-			if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
-				upstreamResolvers.CABundle = dns.Spec.UpstreamResolvers.CABundle
+	if dns.Spec.UpstreamResolvers.TransportConfig.Transport == operatorv1.TLSTransport {
+		if dns.Spec.UpstreamResolvers.TransportConfig.ServerName != "" { //TODO: print a warning about the ignored TLS configuration
+			upstreamResolvers.TransportConfig.Transport = operatorv1.TLSTransport
+			upstreamResolvers.TransportConfig.ServerName = dns.Spec.UpstreamResolvers.TransportConfig.ServerName
+			if dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name != "" {
+				upstreamResolvers.TransportConfig.CABundle = dns.Spec.UpstreamResolvers.TransportConfig.CABundle
 			}
 		}
 	}
@@ -269,29 +271,29 @@ func corefileChanged(current, expected *corev1.ConfigMap) (bool, *corev1.ConfigM
 
 func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]string, error) {
 	caBundleRevisions := make(map[string]string)
-	if dns.Spec.UpstreamResolvers.CABundle.Name != "" {
+	if dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name != "" {
 		sourceName := types.NamespacedName{
 			Namespace: GlobalUserSpecifiedConfigNamespace,
-			Name:      dns.Spec.UpstreamResolvers.CABundle.Name,
+			Name:      dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name,
 		}
 		cm := &corev1.ConfigMap{}
 		if err := client.Get(context.TODO(), sourceName, cm); err != nil {
 			return caBundleRevisions, err
 		}
-		caBundleRevisions[dns.Spec.UpstreamResolvers.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
+		caBundleRevisions[dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
 	}
 
 	for _, server := range dns.Spec.Servers {
-		if server.ForwardPlugin.CABundle.Name != "" {
+		if server.ForwardPlugin.TransportConfig.CABundle.Name != "" {
 			sourceName := types.NamespacedName{
 				Namespace: GlobalUserSpecifiedConfigNamespace,
-				Name:      server.ForwardPlugin.CABundle.Name,
+				Name:      server.ForwardPlugin.TransportConfig.CABundle.Name,
 			}
 			cm := &corev1.ConfigMap{}
 			if err := client.Get(context.TODO(), sourceName, cm); err != nil {
 				return caBundleRevisions, err
 			}
-			caBundleRevisions[server.ForwardPlugin.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
+			caBundleRevisions[server.ForwardPlugin.TransportConfig.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
 		}
 	}
 

@@ -72,10 +72,12 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 			Servers: []operatorv1.Server{
 				{
 					ForwardPlugin: operatorv1.ForwardPlugin{
-						ServerName: "dns.foo.com",
-						Transport:  operatorv1.TLSTransport,
-						CABundle: v1.ConfigMapNameReference{
-							Name: "caClientBundle1",
+						TransportConfig: operatorv1.DNSOverTLSConfig{
+							ServerName: "dns.foo.com",
+							Transport:  operatorv1.TLSTransport,
+							CABundle: v1.ConfigMapNameReference{
+								Name: "caClientBundle1",
+							},
 						},
 						Upstreams: []string{"1.1.1.1"},
 					},
@@ -84,10 +86,12 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 				},
 				{
 					ForwardPlugin: operatorv1.ForwardPlugin{
-						ServerName: "dns.bar.com",
-						Transport:  operatorv1.TLSTransport,
-						CABundle: v1.ConfigMapNameReference{
-							Name: "caClientBundle2",
+						TransportConfig: operatorv1.DNSOverTLSConfig{
+							ServerName: "dns.bar.com",
+							Transport:  operatorv1.TLSTransport,
+							CABundle: v1.ConfigMapNameReference{
+								Name: "caClientBundle2",
+							},
 						},
 						Upstreams: []string{"2.2.2.2"},
 					},
@@ -96,11 +100,13 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 				},
 			},
 			UpstreamResolvers: operatorv1.UpstreamResolvers{
-				CABundle: v1.ConfigMapNameReference{
-					Name: "caClientBundle3",
+				TransportConfig: operatorv1.DNSOverTLSConfig{
+					CABundle: v1.ConfigMapNameReference{
+						Name: "caClientBundle3",
+					},
+					Transport:  operatorv1.TLSTransport,
+					ServerName: "example.com",
 				},
-				Transport:  operatorv1.TLSTransport,
-				ServerName: "example.com",
 			},
 		},
 	}

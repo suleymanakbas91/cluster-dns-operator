@@ -132,21 +132,25 @@ func TestDesiredDNSConfigmap(t *testing.T) {
 					Name:  "foo",
 					Zones: []string{"foo.com"},
 					ForwardPlugin: operatorv1.ForwardPlugin{
-						Upstreams:  []string{"1.1.1.1", "2.2.2.2:5353"},
-						ServerName: "dns.foo.com",
-						Transport:  operatorv1.TLSTransport,
-						Policy:     operatorv1.RoundRobinForwardingPolicy,
+						Upstreams: []string{"1.1.1.1", "2.2.2.2:5353"},
+						TransportConfig: operatorv1.DNSOverTLSConfig{
+							ServerName: "dns.foo.com",
+							Transport:  operatorv1.TLSTransport,
+						},
+						Policy: operatorv1.RoundRobinForwardingPolicy,
 					},
 				},
 				{
 					Name:  "bar",
 					Zones: []string{"bar.com"},
 					ForwardPlugin: operatorv1.ForwardPlugin{
-						Upstreams:  []string{"1.1.1.1", "2.2.2.2:5353"},
-						ServerName: "dns.bar.com",
-						Transport:  operatorv1.TLSTransport,
-						CABundle: v1.ConfigMapNameReference{
-							Name: "cacerts",
+						Upstreams: []string{"1.1.1.1", "2.2.2.2:5353"},
+						TransportConfig: operatorv1.DNSOverTLSConfig{
+							ServerName: "dns.bar.com",
+							Transport:  operatorv1.TLSTransport,
+							CABundle: v1.ConfigMapNameReference{
+								Name: "cacerts",
+							},
 						},
 						Policy: operatorv1.RoundRobinForwardingPolicy,
 					},
@@ -318,9 +322,11 @@ foo.com:5353 {
 								Address: "127.0.0.53",
 							},
 						},
-						Policy:     operatorv1.RoundRobinForwardingPolicy,
-						Transport:  operatorv1.TLSTransport,
-						ServerName: "example.com",
+						Policy: operatorv1.RoundRobinForwardingPolicy,
+						TransportConfig: operatorv1.DNSOverTLSConfig{
+							Transport:  operatorv1.TLSTransport,
+							ServerName: "example.com",
+						},
 					},
 					Servers: []operatorv1.Server{
 						{
@@ -395,11 +401,13 @@ foo.com:5353 {
 								Port:    53,
 							},
 						},
-						Policy:     operatorv1.RoundRobinForwardingPolicy,
-						Transport:  operatorv1.TLSTransport,
-						ServerName: "example.com",
-						CABundle: v1.ConfigMapNameReference{
-							Name: "ca-bundle-config",
+						Policy: operatorv1.RoundRobinForwardingPolicy,
+						TransportConfig: operatorv1.DNSOverTLSConfig{
+							Transport:  operatorv1.TLSTransport,
+							ServerName: "example.com",
+							CABundle: v1.ConfigMapNameReference{
+								Name: "ca-bundle-config",
+							},
 						},
 					},
 					Servers: []operatorv1.Server{
@@ -1367,8 +1375,10 @@ func TestCannotConfigureForwardPluginTransportTLSWithoutServerName(t *testing.T)
 					Zones: []string{"foo.com"},
 					ForwardPlugin: operatorv1.ForwardPlugin{
 						Upstreams: []string{"1.1.1.1", "2.2.2.2:5353"},
-						Transport: operatorv1.TLSTransport,
-						Policy:    operatorv1.RoundRobinForwardingPolicy,
+						TransportConfig: operatorv1.DNSOverTLSConfig{
+							Transport: operatorv1.TLSTransport,
+						},
+						Policy: operatorv1.RoundRobinForwardingPolicy,
 					},
 				},
 			},
