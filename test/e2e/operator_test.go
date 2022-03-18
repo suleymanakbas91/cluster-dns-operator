@@ -667,8 +667,25 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	if err := cl.Get(context.TODO(), operatorcontroller.DNSDaemonSetName(defaultDNS), dnsDaemonSet); err != nil {
 		_ = fmt.Errorf("failed to get daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
 	}
+	resourceVersion := dnsDaemonSet.ResourceVersion
 
-	// TODO add a wait here to check that all of the daemonset pods have been rolled out.
+	// Wait until all of the daemonset pods have been rolled out.
+	err = wait.PollImmediate(3*time.Second, 5*time.Minute, func() (bool, error) {
+		if err := cl.Get(context.TODO(), operatorcontroller.DNSDaemonSetName(defaultDNS), dnsDaemonSet); err != nil {
+			t.Logf("failed to get daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
+			return false, nil
+		}
+		if dnsDaemonSet.ResourceVersion == resourceVersion {
+			return false, nil
+		}
+		if dnsDaemonSet.Status.UpdatedNumberScheduled == dnsDaemonSet.Status.DesiredNumberScheduled {
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to observe UpdatedNumberScheduled for daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
+	}
 
 	selector, err := metav1.LabelSelectorAsSelector(dnsDaemonSet.Spec.Selector)
 	if err != nil {
