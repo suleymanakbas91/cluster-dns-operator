@@ -555,11 +555,6 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		if err := cl.Create(context.TODO(), upstream); err != nil {
 			t.Fatalf("failed to create pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
 		}
-		defer func() {
-			if err := cl.Delete(context.TODO(), upstream); err != nil {
-				t.Fatalf("failed to delete pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
-			}
-		}()
 
 		// Wait for the upstream resolver Pods to be ready.
 		name := types.NamespacedName{Namespace: upstream.Namespace, Name: upstream.Name}
@@ -579,6 +574,13 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 			t.Fatalf("failed to observe ContainersReady condition for pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
 		}
 	}
+	defer func() {
+		for _, upstream := range upstreamPods {
+			if err := cl.Delete(context.TODO(), upstream); err != nil {
+				t.Fatalf("failed to delete pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
+			}
+		}
+	}()
 
 	// Create the upstream resolver Service and get the ClusterIP.
 	upstreamSvc := upstreamService("upstream-tls-svc", upstreamPodNs)
