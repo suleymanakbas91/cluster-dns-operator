@@ -545,45 +545,39 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		t.Fatalf("version %s not found for clusteroperator %s", statuscontroller.CoreDNSVersionName, opName)
 	}
 
-	upstreamPods := []*corev1.Pod{}
-
 	// Create the upstream resolver Pod.
-	upstreamPods = append(upstreamPods, upstreamTLSPod("upstream-tls-1", upstreamPodNs, coreImage, upstreamTLSConfigMap))
-	upstreamPods = append(upstreamPods, upstreamTLSPod("upstream-tls-2", upstreamPodNs, coreImage, upstreamTLSConfigMap))
-
-	for _, upstream := range upstreamPods {
-		if err := cl.Create(context.TODO(), upstream); err != nil {
-			t.Fatalf("failed to create pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
-		}
-
-		// Wait for the upstream resolver Pods to be ready.
-		name := types.NamespacedName{Namespace: upstream.Namespace, Name: upstream.Name}
-		err = wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
-			if err := cl.Get(context.TODO(), name, upstream); err != nil {
-				t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
-				return false, nil
-			}
-			for _, cond := range upstream.Status.Conditions {
-				if cond.Type == corev1.ContainersReady && cond.Status == corev1.ConditionTrue {
-					return true, nil
-				}
-			}
-			return false, nil
-		})
-		if err != nil {
-			t.Fatalf("failed to observe ContainersReady condition for pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
-		}
+	upstreamResolver := upstreamTLSPod("upstream-tls-1", upstreamPodNs, coreImage, upstreamTLSConfigMap)
+	if err := cl.Create(context.TODO(), upstreamResolver); err != nil {
+		t.Fatalf("failed to create pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
 	}
 	defer func() {
-		for _, upstream := range upstreamPods {
-			if err := cl.Delete(context.TODO(), upstream); err != nil {
-				t.Fatalf("failed to delete pod %s/%s: %v", upstream.Namespace, upstream.Name, err)
-			}
+		if err := cl.Delete(context.TODO(), upstreamResolver); err != nil {
+			t.Fatalf("failed to delete pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
 		}
 	}()
 
+	// Wait for the upstream resolver Pod to be ready.
+	name := types.NamespacedName{Namespace: upstreamResolver.Namespace, Name: upstreamResolver.Name}
+	err = wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
+		if err := cl.Get(context.TODO(), name, upstreamResolver); err != nil {
+			t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
+			return false, nil
+		}
+		for _, cond := range upstreamResolver.Status.Conditions {
+			if cond.Type == corev1.ContainersReady && cond.Status == corev1.ConditionTrue {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to observe ContainersReady condition for pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
+	}
+
 	// Create the upstream resolver Service and get the ClusterIP.
 	upstreamSvc := upstreamService("upstream-tls-svc", upstreamPodNs)
+	upstreamSvc.Spec.Selector = map[string]string{"test": "upstream-tls"}
+
 	if err := cl.Create(context.TODO(), upstreamSvc); err != nil {
 		t.Fatalf("failed to create service %s/%s: %v", upstreamSvc.Namespace, upstreamSvc.Name, err)
 	}
@@ -633,7 +627,7 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		ForwardPlugin: operatorv1.ForwardPlugin{
 			TransportConfig: operatorv1.DNSOverTLSConfig{
 				Transport:  operatorv1.TLSTransport,
-				ServerName: "test.upstream.local",
+				ServerName: upstreamIP,
 				CABundle:   configv1.ConfigMapNameReference{Name: "dns-over-tls-ca"},
 			},
 			Upstreams: []string{upstreamIP},
@@ -667,46 +661,33 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	if err := cl.Get(context.TODO(), operatorcontroller.DNSDaemonSetName(defaultDNS), dnsDaemonSet); err != nil {
 		_ = fmt.Errorf("failed to get daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
 	}
-	resourceVersion := dnsDaemonSet.ResourceVersion
-
-	// Wait until all of the daemonset pods have been rolled out.
-	err = wait.PollImmediate(3*time.Second, 5*time.Minute, func() (bool, error) {
-		if err := cl.Get(context.TODO(), operatorcontroller.DNSDaemonSetName(defaultDNS), dnsDaemonSet); err != nil {
-			t.Logf("failed to get daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
-			return false, nil
-		}
-		if dnsDaemonSet.ResourceVersion == resourceVersion {
-			return false, nil
-		}
-		if dnsDaemonSet.Status.UpdatedNumberScheduled == dnsDaemonSet.Status.DesiredNumberScheduled {
-			return true, nil
-		}
-		return false, nil
-	})
-	if err != nil {
-		t.Fatalf("failed to observe UpdatedNumberScheduled for daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
-	}
 
 	selector, err := metav1.LabelSelectorAsSelector(dnsDaemonSet.Spec.Selector)
 	if err != nil {
 		t.Fatalf("daemonset %s/%s has invalid spec.selector: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
 	}
-	defaultDNSPods := &corev1.PodList{}
-	if err := cl.List(context.TODO(), defaultDNSPods, client.MatchingLabelsSelector{Selector: selector}, client.InNamespace(dnsDaemonSet.Namespace)); err != nil {
-		t.Fatalf("failed to list pods for dns daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
-	}
 
-	catCmd := []string{"cat", "/etc/coredns/Corefile"}
-	for _, pod := range defaultDNSPods.Items {
-		if err := lookForStringInPodExec(pod.Namespace, pod.Name, "dns", catCmd, "test.upstream.local", 2*time.Minute); err != nil {
-			// If we failed to find the expected IP in the pod's corefile, log the pod's status.
-			currPod := &corev1.Pod{}
-			if err := cl.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, currPod); err != nil {
-				t.Logf("failed to get pod %s: %v", pod.Name, err)
-			}
-			t.Fatalf("failed to find %s in %s of pod %s/%s: %v, pod status: %v", upstreamIP, catCmd[1], pod.Namespace, pod.Name, err, currPod.Status)
+	err = wait.PollImmediate(3*time.Second, 5*time.Minute, func() (bool, error) {
+		defaultDNSPods := &corev1.PodList{}
+		if err := cl.List(context.TODO(), defaultDNSPods, client.MatchingLabelsSelector{Selector: selector}, client.InNamespace(dnsDaemonSet.Namespace)); err != nil {
+			t.Fatalf("failed to list pods for dns daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
 		}
-	}
+
+		catCmd := []string{"cat", "/etc/coredns/Corefile"}
+		for _, pod := range defaultDNSPods.Items {
+			if err := lookForStringInPodExec(pod.Namespace, pod.Name, "dns", catCmd, upstreamIP, 2*time.Minute); err != nil {
+				// If we failed to find the expected IP in the pod's corefile, log the pod's status.
+				currPod := &corev1.Pod{}
+				if err := cl.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, currPod); err != nil {
+					t.Logf("failed to get pod %s: %v", pod.Name, err)
+					return false, nil
+				}
+				t.Fatalf("failed to find %s in %s of pod %s/%s: %v, pod status: %v", upstreamIP, catCmd[1], pod.Namespace, pod.Name, err, currPod.Status)
+			}
+		}
+
+		return true, nil
+	})
 
 	// Get the openshift-cli image.
 	var (
@@ -738,7 +719,7 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 		}
 	}()
 	// Wait for the client Pod to be ready.
-	name := types.NamespacedName{Namespace: testClient.Namespace, Name: testClient.Name}
+	name = types.NamespacedName{Namespace: testClient.Namespace, Name: testClient.Name}
 	err = wait.PollImmediate(1*time.Second, 60*time.Second, func() (bool, error) {
 		if err := cl.Get(context.TODO(), name, testClient); err != nil {
 			t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
@@ -763,10 +744,8 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	}
 	// Scrape the upstream resolver logs for the "NOERROR" message.
 	logMsg := "NOERROR"
-	for _, upstream := range upstreamPods {
-		if err := lookForStringInPodLog(upstream.Namespace, upstream.Name, upstream.Name, logMsg, 120*time.Second); err != nil {
-			t.Fatalf("failed to parse %q from pod %s/%s logs: %v", logMsg, upstream.Namespace, upstream.Name, err)
-		}
+	if err := lookForStringInPodLog(upstreamResolver.Namespace, upstreamResolver.Name, upstreamResolver.Name, logMsg, 120*time.Second); err != nil {
+		t.Fatalf("failed to parse %q from pod %s/%s logs: %v", logMsg, upstreamResolver.Namespace, upstreamResolver.Name, err)
 	}
 
 	// TODO Is there anything special we need to do to validate TLS?

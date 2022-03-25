@@ -316,9 +316,8 @@ func upstreamService(name, ns string) *corev1.Service {
 			Namespace: ns,
 		},
 		Spec: corev1.ServiceSpec{
-			ExternalName: "test.upstream.local",
-			Ports:        svcPorts,
-			Selector:     map[string]string{"test": "upstream"},
+			Ports:    svcPorts,
+			Selector: map[string]string{"test": "upstream"},
 		},
 	}
 }
