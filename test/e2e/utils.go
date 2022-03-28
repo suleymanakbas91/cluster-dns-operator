@@ -419,54 +419,64 @@ func conditionsMatchExpected(expected, actual map[string]string) bool {
 // createCertPair creates a PEM encoded CA cert, serving cert, and private key for the serving cert.
 // The use case for this is testing DNS-over-TLS where we need to install a CA in cluster DNS and a serving cert + key
 // in the upstream resolver.
-func createCertPair() (pemEncodedCA string, pemEncodedCert string, pemEncodedCertPrivateKey string) {
+func createCertPair() (pemEncodedCA string, pemEncodedCert string, pemEncodedCertPrivateKey string, err error) {
 	// Fields common to both serving certs and CAs
-	certCommon := &x509.Certificate{
+	caCert := &x509.Certificate{
 		SerialNumber: big.NewInt(2019),
 		Subject: pkix.Name{
-			Organization:  []string{"Company, INC."},
+			CommonName:    "allowed",
+			Organization:  []string{"Red Hat Inc"},
 			Country:       []string{"US"},
 			Province:      []string{""},
-			Locality:      []string{"San Francisco"},
-			StreetAddress: []string{"Golden Gate Bridge"},
-			PostalCode:    []string{"94016"},
+			Locality:      []string{"Raleigh"},
+			StreetAddress: []string{"100 East Davie Street"},
+			PostalCode:    []string{"27601"},
 		},
-		NotBefore:   time.Now(),
-		NotAfter:    time.Now().AddDate(0, 0, 7),
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:    x509.KeyUsageDigitalSignature,
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().AddDate(0, 0, 7),
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
 	}
 
-	// Make adjustments to the CA cert. These indicate that it's a CA cert and can sign other certs.
-	caCert := certCommon
-	caCert.IsCA = true
-	caCert.BasicConstraintsValid = true
-	caCert.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
+	servingCert := &x509.Certificate{
+		SerialNumber: big.NewInt(2019),
+		Subject: pkix.Name{
+			Organization:  []string{"Red Hat Inc"},
+			Country:       []string{"US"},
+			Province:      []string{""},
+			Locality:      []string{"Raleigh"},
+			StreetAddress: []string{"100 East Davie Street"},
+			PostalCode:    []string{"27601"},
+		},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().AddDate(0, 0, 7),
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		SubjectKeyId: []byte{1, 2, 3, 4, 6},
+	}
 
-	// Make adjustments to the serving cert. These indicate what IP address it should be used for.
-	cert := certCommon
-	cert.IPAddresses = []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback}
-	cert.SubjectKeyId = []byte{1, 2, 3, 4, 6}
+	caKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return "", "", "", err
+	}
 
-	caKey, _ := rsa.GenerateKey(rand.Reader, 4096)
-	//if err != nil {
-	//	return err
-	//}
+	certKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return "", "", "", err
+	}
 
-	certKey, _ := rsa.GenerateKey(rand.Reader, 4096)
-	//if err != nil {
-	//	errs = append(errs, err)
-	//}
+	rawCA, err := x509.CreateCertificate(rand.Reader, caCert, caCert, &caKey.PublicKey, caKey)
+	if err != nil {
+		return "", "", "", err
+	}
 
-	rawCA, _ := x509.CreateCertificate(rand.Reader, caCert, caCert, &caKey.PublicKey, caKey)
-	//if err != nil {
-	//	errs = append(errs, err)
-	//}
-
-	rawCert, _ := x509.CreateCertificate(rand.Reader, cert, caCert, &certKey.PublicKey, caKey)
-	//if err != nil {
-	//	errs = append(errs, err)
-	//}
+	rawCert, err := x509.CreateCertificate(rand.Reader, servingCert, caCert, &certKey.PublicKey, caKey)
+	if err != nil {
+		return "", "", "", err
+	}
 
 	pemCA := new(bytes.Buffer)
 	pem.Encode(pemCA, &pem.Block{
@@ -486,10 +496,5 @@ func createCertPair() (pemEncodedCA string, pemEncodedCert string, pemEncodedCer
 		Bytes: x509.MarshalPKCS1PrivateKey(certKey),
 	})
 
-	//servingCert, err := tls.X509KeyPair(pemCert.Bytes(), pemCertPrivateKey.Bytes())
-	//if err != nil {
-	//	errs = append(errs, err)
-	//}
-
-	return pemCA.String(), pemCert.String(), pemCertPrivateKey.String() //, errs
+	return pemCA.String(), pemCert.String(), pemCertPrivateKey.String(), nil
 }

@@ -496,7 +496,10 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 
 	// Create the CA, serving cert, and serving cert private key.
 	// The CA goes in the cluster dns operator and the serving cert + key go into the upstream resolvers.
-	ca, cert, key := createCertPair()
+	ca, cert, key, err := createCertPair()
+	if err != nil {
+		t.Fatalf("Error generating certs: %s", err)
+	}
 
 	// Create the ConfigMap to hold the upstream cert and key data
 	upstreamTLSConfigMapData := make(map[string]string)
@@ -709,7 +712,7 @@ func TestDNSOverTLSForwarding(t *testing.T) {
 	}
 
 	// Create the client Pod.
-	testClient := buildPod("test-client-tls", "default", cliImage, []string{"sleep", "3600"})
+	testClient := buildPod("test-client-tls", "default", cliImage, []string{"sleep", "9600"})
 	if err := cl.Create(context.TODO(), testClient); err != nil {
 		t.Fatalf("failed to create pod %s/%s: %v", testClient.Namespace, testClient.Name, err)
 	}
