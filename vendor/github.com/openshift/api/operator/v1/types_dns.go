@@ -131,23 +131,23 @@ type Server struct {
 	ForwardPlugin ForwardPlugin `json:"forwardPlugin"`
 }
 
-// DNSTransport indicates what type of connection should be used
-// +kubebuilder:validation:Enum=tls;cleartext
+// DNSTransport indicates what type of connection should be used.
+// +kubebuilder:validation:Enum=TLS;Cleartext;""
 type DNSTransport string
 
 const (
-	// TLSTransport indicates that TLS should be used for the connection
-	TLSTransport DNSTransport = "tls"
+	// TLSTransport indicates that TLS should be used for the connection.
+	TLSTransport DNSTransport = "TLS"
 
 	// CleartextTransport indicates that no encryption should be used for
 	// the connection.
-	CleartextTransport DNSTransport = "cleartext"
+	CleartextTransport DNSTransport = "Cleartext"
 )
 
-// DNSOverTLSConfig groups related configuration parameters used for configuring
-// forwarding to upstream resolvers that support DNS-over-TLS
-//
-type DNSOverTLSConfig struct {
+// DNSTransportConfig groups related configuration parameters used for configuring
+// forwarding to upstream resolvers that support DNS-over-TLS.
+// +union
+type DNSTransportConfig struct {
 	// transport allows cluster administrators to opt-in to using a DNS-over-TLS
 	// connection between cluster DNS and an upstream resolver(s). Configuring
 	// TLS as the transport at this level without configuring a CABundle will
@@ -155,34 +155,45 @@ type DNSOverTLSConfig struct {
 	// certificate of the upstream resolver(s).
 	//
 	// Possible values:
-	// "" (empty) - This is the default and results in DNS queries being sent over cleartext.
-	// "cleartext" - Cluster admin specified cleartext option. This results in the same functionality
+	// "" (empty) - This means no explicit choice has been made and the platform chooses the default which is subject
+	// to change over time. The current default is "Cleartext".
+	// "Cleartext" - Cluster admin specified cleartext option. This results in the same functionality
 	// as an empty value but may be useful when a cluster admin wants to be more explicit about the transport,
-	// or wants to switch from "tls" to "cleartext" explicitly.
-	// "tls" - This indicates that DNS queries should be sent over a TLS connection. If Transport is set to TLS,
+	// or wants to switch from "TLS" to "Cleartext" explicitly.
+	// "TLS" - This indicates that DNS queries should be sent over a TLS connection. If Transport is set to TLS,
 	// you MUST also set ServerName.
 	//
 	// +optional
+	// +unionDiscriminator
 	Transport DNSTransport `json:"transport,omitempty"`
 
-	// serverName is the upstream server to connect to for DNS resolution.
-	// This is required when Transport is set to "tls" and if Transport is empty or "cleartext"
+	// tls contains the additional configuration options to use when Transport is set to "TLS".
+	TLS *DNSOverTLSConfig `json:"tls,omitempty"`
+}
+
+// DNSOverTLSConfig describes optional DNSTransportConfig fields that should be captured.
+type DNSOverTLSConfig struct {
+	// serverName is the upstream server to connect to when forwarding DNS queries. This is required when Transport is
+	// set to "TLS". ServerName will be validated against the DNS naming conventions in RFC 1123 and should match the
+	// TLS certificate installed in the upstream resolver(s).
 	//
-	// +optional
-	// +kubebuilder:validation:Pattern=`^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z0-9-\p{L}]){2,63})$`
-	ServerName string `json:"serverName,omitempty"`
+	// + ---
+	// + Inspired by the DNS1123 patterns in Kubernetes: https://github.com/kubernetes/kubernetes/blob/7c46f40bdf89a437ecdbc01df45e235b5f6d9745/staging/src/k8s.io/apimachinery/pkg/util/validation/validation.go#L178-L218
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$`
+	ServerName string `json:"serverName"`
 
 	// caBundle references a ConfigMap that must contain either a single
 	// CA Certificate or a CA Bundle (in the case of multiple upstreams signed
 	// by different CAs). This allows cluster administrators to provide their
 	// own CA or CA bundle for validating the certificate of upstream resolvers.
 	//
-	// 1. The configmap must contain a `cabundle.crt` key
-	// 2. The value must be a PEM encoded certificate or bundle.
+	// 1. The configmap must contain a `ca-bundle.crt` key.
+	// 2. The value must be a PEM encoded CA certificate or CA bundle.
 	// 3. The administrator must create this configmap in the openshift-config namespace.
 	//
 	// +optional
-	// +kubebuilder:validation:Optional
 	CABundle v1.ConfigMapNameReference `json:"caBundle,omitempty"`
 }
 
@@ -234,7 +245,7 @@ type ForwardPlugin struct {
 	// requests to an upstream resolver.
 	//
 	// +optional
-	TransportConfig DNSOverTLSConfig `json:"transportConfig,omitempty"`
+	TransportConfig DNSTransportConfig `json:"transportConfig,omitempty"`
 }
 
 // UpstreamResolvers defines a schema for configuring the CoreDNS forward plugin in the
@@ -276,7 +287,7 @@ type UpstreamResolvers struct {
 	// requests to an upstream resolver.
 	//
 	// +optional
-	TransportConfig DNSOverTLSConfig `json:"transportConfig,omitempty"`
+	TransportConfig DNSTransportConfig `json:"transportConfig,omitempty"`
 }
 
 // Upstream can either be of type SystemResolvConf, or of type Network.

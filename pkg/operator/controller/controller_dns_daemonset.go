@@ -110,14 +110,14 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 		switch c.Name {
 		case "dns":
 			daemonset.Spec.Template.Spec.Containers[i].Image = coreDNSImage
-			if dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name != "" {
-				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name, dns.Spec.UpstreamResolvers.TransportConfig.ServerName, caBundleRevisionMap)
+			if dns.Spec.UpstreamResolvers.TransportConfig.TLS != nil && dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name != "" {
+				vol, volMount := clientCACMVolAndVolMount(dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name, dns.Spec.UpstreamResolvers.TransportConfig.TLS.ServerName, caBundleRevisionMap)
 				daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 				daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
 			}
 			for _, server := range dns.Spec.Servers {
-				if server.ForwardPlugin.TransportConfig.CABundle.Name != "" {
-					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.TransportConfig.CABundle.Name, server.ForwardPlugin.TransportConfig.ServerName, caBundleRevisionMap)
+				if server.ForwardPlugin.TransportConfig.TLS != nil && server.ForwardPlugin.TransportConfig.TLS.CABundle.Name != "" {
+					vol, volMount := clientCACMVolAndVolMount(server.ForwardPlugin.TransportConfig.TLS.CABundle.Name, server.ForwardPlugin.TransportConfig.TLS.ServerName, caBundleRevisionMap)
 					daemonset.Spec.Template.Spec.Volumes = append(daemonset.Spec.Template.Spec.Volumes, *vol)
 					daemonset.Spec.Template.Spec.Containers[i].VolumeMounts = append(daemonset.Spec.Template.Spec.Containers[i].VolumeMounts, *volMount)
 				}

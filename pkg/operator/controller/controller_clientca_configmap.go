@@ -20,12 +20,12 @@ import (
 // configmap exists, the configmap if it does exist, and an error value.
 func (r *reconciler) ensureClientCAConfigMaps(dns *operatorv1.DNS) error {
 	var configmapNames []string
-	if dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name != "" {
-		configmapNames = append(configmapNames, dns.Spec.UpstreamResolvers.TransportConfig.CABundle.Name)
+	if dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name != "" {
+		configmapNames = append(configmapNames, dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name)
 	}
 	for _, server := range dns.Spec.Servers {
-		if server.ForwardPlugin.TransportConfig.CABundle.Name != "" {
-			configmapNames = append(configmapNames, server.ForwardPlugin.TransportConfig.CABundle.Name)
+		if server.ForwardPlugin.TransportConfig.TLS.CABundle.Name != "" {
+			configmapNames = append(configmapNames, server.ForwardPlugin.TransportConfig.TLS.CABundle.Name)
 		}
 	}
 
