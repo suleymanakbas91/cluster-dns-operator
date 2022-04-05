@@ -5,7 +5,13 @@ package e2e
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 	"testing"
@@ -488,6 +494,289 @@ func TestDNSForwarding(t *testing.T) {
 	}
 }
 
+func TestDNSOverTLSForwarding(t *testing.T) {
+	tlsUpstreamName := "upstream-tls"
+
+	cl, err := getClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create the CA
+	caCert, caKey, err := generateClientCA()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create the server cert
+	serverCert, serverKey, err := generateServerCertificate(caCert, caKey, tlsUpstreamName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// PEM encode the server cert and key
+	pemServerCert := encodeCert(serverCert)
+	pemServerKey := encodeKey(serverKey)
+
+	// Create a separate namespace for the upstream resolver. Deleting this namespace will clean up the resources created.
+	tlsUpstreamNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: tlsUpstreamName,
+		},
+	}
+	if err := cl.Create(context.TODO(), tlsUpstreamNamespace); err != nil {
+		t.Fatalf("failed to create namespace for the upstream resolver namespace/%s: %v", tlsUpstreamNamespace.Name, err)
+	}
+	defer func() {
+		if err := cl.Delete(context.TODO(), tlsUpstreamNamespace); err != nil {
+			t.Fatalf("failed to delete upstream resolver namespace namespace/%s: %v", tlsUpstreamNamespace.Name, err)
+		}
+	}()
+
+	// upstreamTLSConfigMapData holds the server cert, server key, and Corefile for the upstream resolver.
+	upstreamTLSConfigMapData := make(map[string]string)
+	upstreamTLSConfigMapData["cert"] = pemServerCert
+	upstreamTLSConfigMapData["key"] = pemServerKey
+	upstreamTLSConfigMapData["Corefile"] = upstreamTLSCorefile
+
+	upstreamTLSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      tlsUpstreamName,
+			Namespace: tlsUpstreamNamespace.Name,
+		},
+		Data: upstreamTLSConfigMapData,
+	}
+
+	// Create the upstream resolver TLS ConfigMap.
+	if err := cl.Create(context.TODO(), upstreamTLSConfigMap); err != nil {
+		t.Fatalf("failed to create configmap %s/%s: %v", upstreamTLSConfigMap.Namespace, upstreamTLSConfigMap.Name, err)
+	}
+
+	// Get the CoreDNS image used by the test upstream resolver.
+	co := &configv1.ClusterOperator{}
+	if err := cl.Get(context.TODO(), opName, co); err != nil {
+		t.Fatalf("failed to get clusteroperator %s: %v", opName, err)
+	}
+	var (
+		coreImage      string
+		coreImageFound bool
+	)
+	for _, ver := range co.Status.Versions {
+		if ver.Name == statuscontroller.CoreDNSVersionName {
+			if len(ver.Version) == 0 {
+				t.Fatalf("clusteroperator %s has empty coredns version", opName)
+			}
+			coreImageFound = true
+			coreImage = ver.Version
+			break
+		}
+	}
+	if !coreImageFound {
+		t.Fatalf("version %s not found for clusteroperator %s", statuscontroller.CoreDNSVersionName, opName)
+	}
+
+	// Create the upstream resolver Pod.
+	upstreamResolver := upstreamTLSPod(tlsUpstreamName, tlsUpstreamNamespace.Name, coreImage, upstreamTLSConfigMap)
+	if err := cl.Create(context.TODO(), upstreamResolver); err != nil {
+		t.Fatalf("failed to create pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
+	}
+
+	// Wait for the upstream resolver Pod to be ready.
+	name := types.NamespacedName{Namespace: upstreamResolver.Namespace, Name: upstreamResolver.Name}
+	err = wait.PollImmediate(1*time.Second, 2*time.Minute, func() (bool, error) {
+		if err := cl.Get(context.TODO(), name, upstreamResolver); err != nil {
+			t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
+			return false, nil
+		}
+		for _, cond := range upstreamResolver.Status.Conditions {
+			if cond.Type == corev1.ContainersReady && cond.Status == corev1.ConditionTrue {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to observe ContainersReady condition for pod %s/%s: %v", upstreamResolver.Namespace, upstreamResolver.Name, err)
+	}
+
+	// Create the upstream resolver Service and get the ClusterIP.
+	upstreamSvc := upstreamService(tlsUpstreamName, tlsUpstreamNamespace.Name)
+	upstreamSvc.Spec.Selector = map[string]string{"test": tlsUpstreamName}
+	if err := cl.Create(context.TODO(), upstreamSvc); err != nil {
+		t.Fatalf("failed to create service %s/%s: %v", upstreamSvc.Namespace, upstreamSvc.Name, err)
+	}
+
+	if err := cl.Get(context.TODO(), types.NamespacedName{Namespace: upstreamSvc.Namespace, Name: upstreamSvc.Name}, upstreamSvc); err != nil {
+		t.Fatalf("failed to get service %s/%s: %v", upstreamSvc.Namespace, upstreamSvc.Name, err)
+	}
+	upstreamIP := upstreamSvc.Spec.ClusterIP
+	if len(upstreamIP) == 0 {
+		t.Fatalf("failed to get clusterIP for service %s/%s", upstreamSvc.Namespace, upstreamSvc.Name)
+	}
+
+	// Create the ConfigMap to hold the cert and key data for the operator configuration
+	pemCACert := encodeCert(caCert)
+	downstreamTLSConfigMapData := map[string]string{"ca-bundle.crt": pemCACert}
+	downstreamTLSConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dns-over-tls-ca",
+			Namespace: "openshift-config",
+		},
+		Data: downstreamTLSConfigMapData,
+	}
+
+	// Create the downstream resolver TLS ConfigMap.
+	if err := cl.Create(context.TODO(), downstreamTLSConfigMap); err != nil {
+		t.Fatalf("failed to create configmap %s/%s: %v", downstreamTLSConfigMap.Namespace, downstreamTLSConfigMap.Name, err)
+	}
+	defer func() {
+		if err := cl.Delete(context.TODO(), downstreamTLSConfigMap); err != nil {
+			t.Fatalf("failed to delete configmap %s/%s: %v", downstreamTLSConfigMap.Namespace, downstreamTLSConfigMap.Name, err)
+		}
+	}()
+
+	// Update cluster DNS forwarding with the upstream resolver's Service IP address.
+	defaultDNS := &operatorv1.DNS{}
+	if err := cl.Get(context.TODO(), types.NamespacedName{Name: operatorcontroller.DefaultDNSController}, defaultDNS); err != nil {
+		t.Fatalf("failed to get default dns: %v", err)
+	}
+
+	upstream := operatorv1.Server{
+		Name:  "test",
+		Zones: []string{"foo.com"},
+		ForwardPlugin: operatorv1.ForwardPlugin{
+			TransportConfig: operatorv1.DNSTransportConfig{
+				Transport: operatorv1.TLSTransport,
+				TLS: &operatorv1.DNSOverTLSConfig{
+					ServerName: tlsUpstreamName,
+					CABundle:   configv1.ConfigMapNameReference{Name: "dns-over-tls-ca"},
+				},
+			},
+			Upstreams: []string{"tls://" + upstreamIP + ":53"},
+		},
+	}
+	defaultDNS.Spec.Servers = []operatorv1.Server{upstream}
+	if err := cl.Update(context.TODO(), defaultDNS); err != nil {
+		t.Fatalf("failed to update dns %s: %v", defaultDNS.Name, err)
+	}
+	defer func() {
+		defaultDNS = &operatorv1.DNS{}
+		if err := cl.Get(context.TODO(), types.NamespacedName{Name: "default"}, defaultDNS); err != nil {
+			t.Fatalf("failed to get default dns: %v", err)
+		}
+		if len(defaultDNS.Spec.Servers) != 0 {
+			// dnses.operator/default has a nil spec by default.
+			defaultDNS.Spec = operatorv1.DNSSpec{}
+			if err := cl.Update(context.TODO(), defaultDNS); err != nil {
+				t.Fatalf("failed to update dns %s: %v", defaultDNS.Name, err)
+			}
+		}
+	}()
+
+	// Verify that default DNS pods are all available before inspecting them.
+	if err := waitForDNSConditions(t, cl, 1*time.Minute, dnsName, defaultAvailableDNSConditions...); err != nil {
+		t.Errorf("expected default DNS pods to be available: %v", err)
+	}
+
+	// Verify that the Corefile of DNS DaemonSet pods have been updated.
+	dnsDaemonSet := &appsv1.DaemonSet{}
+	if err := cl.Get(context.TODO(), operatorcontroller.DNSDaemonSetName(defaultDNS), dnsDaemonSet); err != nil {
+		_ = fmt.Errorf("failed to get daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
+	}
+
+	selector, err := metav1.LabelSelectorAsSelector(dnsDaemonSet.Spec.Selector)
+	if err != nil {
+		t.Fatalf("daemonset %s/%s has invalid spec.selector: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
+	}
+
+	// hack, should be fixed
+	// Try some additional parameters like https://github.com/openshift/cluster-ingress-operator/blob/77baf4309062b83199a806d466955b1bf071e19c/test/e2e/operator_test.go#L2678
+	err = wait.PollImmediate(3*time.Second, 6*time.Minute, func() (bool, error) {
+		defaultDNSPods := &corev1.PodList{}
+		if err := cl.List(context.TODO(), defaultDNSPods, client.MatchingLabelsSelector{Selector: selector}, client.InNamespace(dnsDaemonSet.Namespace)); err != nil {
+			t.Fatalf("failed to list pods for dns daemonset %s/%s: %v", dnsDaemonSet.Namespace, dnsDaemonSet.Name, err)
+		}
+
+		catCmd := []string{"cat", "/etc/coredns/Corefile"}
+		for _, pod := range defaultDNSPods.Items {
+			if err := lookForStringInPodExec(pod.Namespace, pod.Name, "dns", catCmd, upstreamIP, 2*time.Minute); err != nil {
+				// If we failed to find the expected IP in the pod's corefile, log the pod's status.
+				currPod := &corev1.Pod{}
+				if err := cl.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, currPod); err != nil {
+					t.Logf("failed to get pod %s: %v", pod.Name, err)
+					return false, nil
+				}
+				t.Fatalf("failed to find %s in %s of pod %s/%s: %v, pod status: %v", upstreamIP, catCmd[1], pod.Namespace, pod.Name, err, currPod.Status)
+			}
+		}
+
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to find %s in DNS pods: %v", upstreamIP, err)
+	}
+
+	// Get the openshift-cli image.
+	var (
+		cliImage      string
+		cliImageFound bool
+	)
+	for _, ver := range co.Status.Versions {
+		if ver.Name == statuscontroller.OpenshiftCLIVersionName {
+			if len(ver.Version) == 0 {
+				break
+			}
+			cliImage = ver.Version
+			cliImageFound = true
+			break
+		}
+	}
+	if !cliImageFound {
+		t.Fatalf("failed to find the %s version for clusteroperator %s", statuscontroller.OpenshiftCLIVersionName, co.Name)
+	}
+
+	// Create the client Pod.
+	testClient := buildPod("test-client-tls", "default", cliImage, []string{"sleep", "3600"})
+	if err := cl.Create(context.TODO(), testClient); err != nil {
+		t.Fatalf("failed to create pod %s/%s: %v", testClient.Namespace, testClient.Name, err)
+	}
+	defer func() {
+		if err := cl.Delete(context.TODO(), testClient); err != nil {
+			t.Fatalf("failed to delete pod %s/%s: %v", testClient.Namespace, testClient.Name, err)
+		}
+	}()
+	// Wait for the client Pod to be ready.
+	name = types.NamespacedName{Namespace: testClient.Namespace, Name: testClient.Name}
+	err = wait.PollImmediate(1*time.Second, 60*time.Second, func() (bool, error) {
+		if err := cl.Get(context.TODO(), name, testClient); err != nil {
+			t.Logf("failed to get pod %s/%s: %v", name.Namespace, name.Name, err)
+			return false, nil
+		}
+		for _, cond := range testClient.Status.Conditions {
+			if cond.Type == corev1.ContainersReady &&
+				cond.Status == corev1.ConditionTrue {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to observe ContainersReady condition for pod %s/%s: %v", testClient.Namespace, testClient.Name, err)
+	}
+	// Dig the example dns forwarding host.
+	digCmd := []string{"dig", "+short", "www.foo.com", "A"}
+	fooHost := "1.2.3.4"
+	if err = lookForStringInPodExec(testClient.Namespace, testClient.Name, testClient.Name, digCmd, fooHost, 30*time.Second); err != nil {
+		t.Fatalf("failed to forward request to %s: %v", upstreamIP, err)
+	}
+
+	//Scrape the upstream resolver logs for the "NOERROR" message.
+	logMsg := "NOERROR"
+	if err = lookForStringInPodLog(upstreamResolver.Namespace, upstreamResolver.Name, upstreamResolver.Name, logMsg, 120*time.Second); err != nil {
+		t.Fatalf("failed to parse %q from pod %s/%s logs: %v", logMsg, upstreamResolver.Namespace, upstreamResolver.Name, err)
+	}
+}
+
 func TestDNSLogging(t *testing.T) {
 	cl, err := getClient()
 	if err != nil {
@@ -763,4 +1052,95 @@ func TestDNSNodePlacement(t *testing.T) {
 	if len(podList.Items) == 0 {
 		t.Errorf("expected label selector matching 0 nodes to be ignored; found 0 dns pods")
 	}
+}
+
+// generateClientCA generates and returns a CA certificate and key.
+func generateClientCA() (*x509.Certificate, *rsa.PrivateKey, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	root := &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "operator-e2e"},
+		SignatureAlgorithm:    x509.SHA256WithRSA,
+		NotBefore:             time.Now().Add(-24 * time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		SerialNumber:          big.NewInt(1),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            0,
+		MaxPathLenZero:        true,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, root, root, &key.PublicKey, key)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	certs, err := x509.ParseCertificates(der)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(certs) != 1 {
+		return nil, nil, fmt.Errorf("expected a single certificate from x509.ParseCertificates, got %d: %v", len(certs), certs)
+	}
+
+	return certs[0], key, nil
+}
+
+// generateServerCertificate generates and returns a client certificate and key
+// where the certificate is signed by the provided CA certificate.
+func generateServerCertificate(caCert *x509.Certificate, caKey *rsa.PrivateKey, cn string) (*x509.Certificate, *rsa.PrivateKey, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	template := &x509.Certificate{
+		Subject: pkix.Name{
+			CommonName:   cn,
+			Organization: []string{"OpenShift"},
+		},
+		SignatureAlgorithm:    x509.SHA256WithRSA,
+		NotBefore:             time.Now().Add(-24 * time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		SerialNumber:          big.NewInt(1),
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{cn},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, caCert, &key.PublicKey, caKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	certs, err := x509.ParseCertificates(derBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(certs) != 1 {
+		return nil, nil, fmt.Errorf("expected a single certificate from x509.ParseCertificates, got %d: %v", len(certs), certs)
+	}
+
+	return certs[0], key, nil
+}
+
+// encodeCert returns a PEM block encoding the given certificate.
+func encodeCert(cert *x509.Certificate) string {
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cert.Raw,
+	}))
+}
+
+// encodeKey returns a PEM block encoding the given key.
+func encodeKey(key *rsa.PrivateKey) string {
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}))
 }
