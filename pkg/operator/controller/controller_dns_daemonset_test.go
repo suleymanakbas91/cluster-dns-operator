@@ -60,7 +60,7 @@ func TestDesiredDNSDaemonset(t *testing.T) {
 	}
 }
 
-func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
+func TestDesiredDNSDaemonsetWithCABundleConfigMaps(t *testing.T) {
 	coreDNSImage := "quay.io/openshift/coredns:test"
 	kubeRBACProxyImage := "quay.io/openshift/origin-kube-rbac-proxy:test"
 
@@ -77,7 +77,7 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 							TLS: &operatorv1.DNSOverTLSConfig{
 								ServerName: "dns.foo.com",
 								CABundle: v1.ConfigMapNameReference{
-									Name: "caClientBundle1",
+									Name: "caBundle1",
 								},
 							},
 						},
@@ -93,7 +93,7 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 							TLS: &operatorv1.DNSOverTLSConfig{
 								ServerName: "dns.bar.com",
 								CABundle: v1.ConfigMapNameReference{
-									Name: "caClientBundle2",
+									Name: "caBundle2",
 								},
 							},
 						},
@@ -109,7 +109,7 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 					TLS: &operatorv1.DNSOverTLSConfig{
 						ServerName: "example.com",
 						CABundle: v1.ConfigMapNameReference{
-							Name: "caClientBundle3",
+							Name: "caBundle3",
 						},
 					},
 				},
@@ -118,15 +118,15 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 	}
 
 	cmMap := make(map[string]string)
-	cmMap["caClientBundle1"] = "caClientBundle1-10"
-	cmMap["caClientBundle2"] = "caClientBundle2-20"
-	cmMap["caClientBundle3"] = "caClientBundle3-30"
+	cmMap["caBundle1"] = "caBundle1-10"
+	cmMap["caBundle2"] = "caBundle2-20"
+	cmMap["caBundle3"] = "caBundle3-30"
 
 	if ds, err := desiredDNSDaemonSet(dns, coreDNSImage, kubeRBACProxyImage, cmMap); err != nil {
 		t.Errorf("invalid dns daemonset: %v", err)
 	} else {
 		// Validate the volumes
-		clientCABundleFilename := "caBundle.crt"
+		caBundleFilename := "caBundle.crt"
 		expectedVolumes := map[string]corev1.Volume{
 			"config-volume": {
 				Name: "config-volume",
@@ -152,49 +152,49 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 					},
 				},
 			},
-			"dns-client-cabundle-caClientBundle1": {
-				Name: "dns-client-cabundle-caClientBundle1",
+			"dns-cabundle-caBundle1": {
+				Name: "dns-cabundle-caBundle1",
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "dns-client-cabundle-caClientBundle1",
+							Name: "dns-cabundle-caBundle1",
 						},
 						Items: []corev1.KeyToPath{
 							{
-								Key:  clientCABundleFilename,
-								Path: clientCABundleFilename,
+								Key:  caBundleFilename,
+								Path: caBundleFilename,
 							},
 						},
 					},
 				},
 			},
-			"dns-client-cabundle-caClientBundle2": {
-				Name: "dns-client-cabundle-caClientBundle2",
+			"dns-cabundle-caBundle2": {
+				Name: "dns-cabundle-caBundle2",
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "dns-client-cabundle-caClientBundle2",
+							Name: "dns-cabundle-caBundle2",
 						},
 						Items: []corev1.KeyToPath{
 							{
-								Key:  clientCABundleFilename,
-								Path: clientCABundleFilename,
+								Key:  caBundleFilename,
+								Path: caBundleFilename,
 							},
 						},
 					},
 				},
 			},
-			"dns-client-cabundle-caClientBundle3": {
-				Name: "dns-client-cabundle-caClientBundle3",
+			"dns-cabundle-caBundle3": {
+				Name: "dns-cabundle-caBundle3",
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "dns-client-cabundle-caClientBundle3",
+							Name: "dns-cabundle-caBundle3",
 						},
 						Items: []corev1.KeyToPath{
 							{
-								Key:  clientCABundleFilename,
-								Path: clientCABundleFilename,
+								Key:  caBundleFilename,
+								Path: caBundleFilename,
 							},
 						},
 					},
@@ -208,19 +208,19 @@ func TestDesiredDNSDaemonsetWithClientCAConfigMaps(t *testing.T) {
 				MountPath: "/etc/coredns",
 				ReadOnly:  true,
 			},
-			"dns-client-cabundle-caClientBundle1": {
-				Name:      "dns-client-cabundle-caClientBundle1",
-				MountPath: "/etc/pki/dns.foo.com-caClientBundle1-10",
+			"dns-cabundle-caBundle1": {
+				Name:      "dns-cabundle-caBundle1",
+				MountPath: "/etc/pki/dns.foo.com-caBundle1-10",
 				ReadOnly:  true,
 			},
-			"dns-client-cabundle-caClientBundle2": {
-				Name:      "dns-client-cabundle-caClientBundle2",
-				MountPath: "/etc/pki/dns.bar.com-caClientBundle2-20",
+			"dns-cabundle-caBundle2": {
+				Name:      "dns-cabundle-caBundle2",
+				MountPath: "/etc/pki/dns.bar.com-caBundle2-20",
 				ReadOnly:  true,
 			},
-			"dns-client-cabundle-caClientBundle3": {
-				Name:      "dns-client-cabundle-caClientBundle3",
-				MountPath: "/etc/pki/example.com-caClientBundle3-30",
+			"dns-cabundle-caBundle3": {
+				Name:      "dns-cabundle-caBundle3",
+				MountPath: "/etc/pki/example.com-caBundle3-30",
 				ReadOnly:  true,
 			},
 		}

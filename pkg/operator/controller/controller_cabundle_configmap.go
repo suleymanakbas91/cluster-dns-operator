@@ -14,11 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
-// ensureClientCAConfigMap syncs client CA configmaps for a DNS
+// ensureCABundleConfigMaps syncs CA bundle configmaps for a DNS
 // between the openshift-config and openshift-dns namespaces if the user has
-// configured a client CA configmap.  Returns a Boolean indicating whether the
+// configured a CA bundle configmap.  Returns a Boolean indicating whether the
 // configmap exists, the configmap if it does exist, and an error value.
-func (r *reconciler) ensureClientCAConfigMaps(dns *operatorv1.DNS) error {
+func (r *reconciler) ensureCABundleConfigMaps(dns *operatorv1.DNS) error {
 	var configmapNames []string
 	if dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name != "" {
 		configmapNames = append(configmapNames, dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name)
@@ -34,18 +34,18 @@ func (r *reconciler) ensureClientCAConfigMaps(dns *operatorv1.DNS) error {
 			Namespace: GlobalUserSpecifiedConfigNamespace,
 			Name:      name,
 		}
-		haveSource, source, err := r.currentClientCAConfigMap(sourceName)
+		haveSource, source, err := r.currentCABundleConfigMap(sourceName)
 		if err != nil {
 			return err
 		}
 
-		destName := ClientCABundleConfigMapName(source.Name)
-		have, current, err := r.currentClientCAConfigMap(destName)
+		destName := CABundleConfigMapName(source.Name)
+		have, current, err := r.currentCABundleConfigMap(destName)
 		if err != nil {
 			return err
 		}
 
-		want, desired, err := desiredClientCAConfigMap(dns, haveSource, source, destName)
+		want, desired, err := desiredCABundleConfigMap(dns, haveSource, source, destName)
 		if err != nil {
 			return err
 		}
@@ -67,14 +67,14 @@ func (r *reconciler) ensureClientCAConfigMaps(dns *operatorv1.DNS) error {
 				return fmt.Errorf("failed to create configmap: %w", err)
 			}
 			logrus.Infof("created configmap %s/%s", desired.Namespace, desired.Name)
-			_, _, err = r.currentClientCAConfigMap(destName)
+			_, _, err = r.currentCABundleConfigMap(destName)
 			return err
 		case want && have:
-			if updated, err := r.updateClientCAConfigMap(current, desired); err != nil {
+			if updated, err := r.updateCABundleConfigMap(current, desired); err != nil {
 				return fmt.Errorf("failed to update configmap: %w", err)
 			} else if updated {
 				logrus.Infof("updated configmap %s/%s", desired.Namespace, desired.Name)
-				_, _, err = r.currentClientCAConfigMap(destName)
+				_, _, err = r.currentCABundleConfigMap(destName)
 				return err
 			}
 		}
@@ -83,10 +83,10 @@ func (r *reconciler) ensureClientCAConfigMaps(dns *operatorv1.DNS) error {
 	return nil
 }
 
-// desiredClientCAConfigMap returns the desired client CA configmap.  Returns a
+// desiredCABundleConfigMap returns the desired CA bundle configmap.  Returns a
 // Boolean indicating whether a configmap is desired, as well as the configmap
 // if one is desired.
-func desiredClientCAConfigMap(dns *operatorv1.DNS, haveSource bool, sourceConfigmap *corev1.ConfigMap, name types.NamespacedName) (bool, *corev1.ConfigMap, error) {
+func desiredCABundleConfigMap(dns *operatorv1.DNS, haveSource bool, sourceConfigmap *corev1.ConfigMap, name types.NamespacedName) (bool, *corev1.ConfigMap, error) {
 	if !haveSource {
 		return false, nil, nil
 	}
@@ -105,10 +105,10 @@ func desiredClientCAConfigMap(dns *operatorv1.DNS, haveSource bool, sourceConfig
 	return true, &cm, nil
 }
 
-// currentClientCAConfigMap returns the current configmap.  Returns a Boolean
+// currentCABundleConfigMap returns the current configmap.  Returns a Boolean
 // indicating whether the configmap existed, the configmap if it did exist, and
 // an error value.
-func (r *reconciler) currentClientCAConfigMap(name types.NamespacedName) (bool, *corev1.ConfigMap, error) {
+func (r *reconciler) currentCABundleConfigMap(name types.NamespacedName) (bool, *corev1.ConfigMap, error) {
 	if len(name.Name) == 0 {
 		return false, nil, nil
 	}
@@ -122,10 +122,10 @@ func (r *reconciler) currentClientCAConfigMap(name types.NamespacedName) (bool, 
 	return true, cm, nil
 }
 
-// updateClientCAConfigMap updates a configmap.  Returns a Boolean indicating
+// updateCABundleConfigMap updates a configmap.  Returns a Boolean indicating
 // whether the configmap was updated, and an error value.
-func (r *reconciler) updateClientCAConfigMap(current, desired *corev1.ConfigMap) (bool, error) {
-	if clientCAConfigmapsEqual(current, desired) {
+func (r *reconciler) updateCABundleConfigMap(current, desired *corev1.ConfigMap) (bool, error) {
+	if caBundleConfigmapsEqual(current, desired) {
 		return false, nil
 	}
 	updated := current.DeepCopy()
@@ -137,9 +137,9 @@ func (r *reconciler) updateClientCAConfigMap(current, desired *corev1.ConfigMap)
 	return true, nil
 }
 
-// clientCAConfigmapsEqual compares two client CA configmaps.  Returns true if
+// caBundleConfigmapsEqual compares two CA bundle configmaps.  Returns true if
 // the configmaps should be considered equal for the purpose of determining
 // whether an update is necessary, false otherwise.
-func clientCAConfigmapsEqual(a, b *corev1.ConfigMap) bool {
+func caBundleConfigmapsEqual(a, b *corev1.ConfigMap) bool {
 	return reflect.DeepEqual(a.Data, b.Data)
 }

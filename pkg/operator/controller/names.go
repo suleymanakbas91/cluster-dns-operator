@@ -94,11 +94,11 @@ func DNSConfigMapName(dns *operatorv1.DNS) types.NamespacedName {
 	}
 }
 
-// ClientCABundleConfigMapName returns the namespaced name for the dns client ca config map.
-func ClientCABundleConfigMapName(sourceName string) types.NamespacedName {
+// CABundleConfigMapName returns the namespaced name for the dns ca bundle config map.
+func CABundleConfigMapName(sourceName string) types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: "openshift-dns",
-		Name:      "dns-client-cabundle-" + sourceName,
+		Name:      "dns-cabundle-" + sourceName,
 	}
 }
 

@@ -416,8 +416,8 @@ func (r *reconciler) ensureDNS(dns *operatorv1.DNS) error {
 		if _, _, err := r.ensureDNSConfigMap(dns, clusterDomain); err != nil {
 			errs = append(errs, fmt.Errorf("failed to create configmap for dns %s: %v", dns.Name, err))
 		}
-		if err := r.ensureClientCAConfigMaps(dns); err != nil {
-			errs = append(errs, fmt.Errorf("failed to create client ca configmaps for dns %s: %v", dns.Name, err))
+		if err := r.ensureCABundleConfigMaps(dns); err != nil {
+			errs = append(errs, fmt.Errorf("failed to create ca bundle configmaps for dns %s: %v", dns.Name, err))
 		}
 		if haveSvc, svc, err := r.ensureDNSService(dns, clusterIP, daemonsetRef); err != nil {
 			// Set clusterIP to an empty string to cause ClusterOperator to report

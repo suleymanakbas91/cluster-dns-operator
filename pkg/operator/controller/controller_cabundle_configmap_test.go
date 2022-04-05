@@ -8,16 +8,16 @@ import (
 	"testing"
 )
 
-func TestDesiredClientCAConfigmap(t *testing.T) {
+func TestDesiredCABundleConfigmap(t *testing.T) {
 	sourceConfigmap := corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "clientca-config",
+			Name:      "cabundle-config",
 			Namespace: GlobalUserSpecifiedConfigNamespace,
 		},
 		Data: map[string]string{"caBundle": "test-bundle"},
 	}
 
-	destName := ClientCABundleConfigMapName(sourceConfigmap.Name)
+	destName := CABundleConfigMapName(sourceConfigmap.Name)
 
 	dns := &operatorv1.DNS{
 		ObjectMeta: metav1.ObjectMeta{
@@ -26,12 +26,12 @@ func TestDesiredClientCAConfigmap(t *testing.T) {
 		Spec: operatorv1.DNSSpec{},
 	}
 
-	_, cm, err := desiredClientCAConfigMap(dns, true, &sourceConfigmap, destName)
+	_, cm, err := desiredCABundleConfigMap(dns, true, &sourceConfigmap, destName)
 	if err != nil {
 		t.Errorf("Unexpected error : %v", err)
 	} else if diff := cmp.Diff(cm.Data, sourceConfigmap.Data); diff != "" {
-		t.Errorf("Unexpected CA Client ConfigMap data;\n%s", diff)
+		t.Errorf("Unexpected CA Bundle ConfigMap data;\n%s", diff)
 	} else if diff := cmp.Diff(cm.OwnerReferences, []metav1.OwnerReference{dnsOwnerRef(dns)}); diff != "" {
-		t.Errorf("Unexpected CA Client ConfigMap OwnerReference;\n%s", diff)
+		t.Errorf("Unexpected CA Bundle ConfigMap OwnerReference;\n%s", diff)
 	}
 }
