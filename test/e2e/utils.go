@@ -4,16 +4,8 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
 	"fmt"
-	"math/big"
-	"net"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -231,39 +223,6 @@ func upstreamPod(name, ns, image, cfgMap string) *corev1.Pod {
 	}
 }
 
-func upstreamTLSPod(name, ns, image string, configMap *corev1.ConfigMap) *corev1.Pod {
-	coreContainer := upstreamContainer(name, image)
-	volumeName := configMap.Name
-
-	items := []corev1.KeyToPath{}
-	for k, _ := range configMap.Data {
-		items = append(items, corev1.KeyToPath{Key: k, Path: k})
-	}
-	volume := corev1.Volume{
-		Name: "config-volume",
-		VolumeSource: corev1.VolumeSource{
-			ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: volumeName,
-				},
-				Items: items,
-			},
-		},
-	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ns,
-			Labels:    map[string]string{"test": "upstream-tls"},
-		},
-		Spec: corev1.PodSpec{
-			Volumes:            []corev1.Volume{volume},
-			Containers:         []corev1.Container{coreContainer},
-			ServiceAccountName: "dns",
-		},
-	}
-}
-
 //func upstreamVolume(configMap *corev1.ConfigMap) (*corev1.Volume, *corev1.VolumeMount) {
 func upstreamVolume(configMap *corev1.ConfigMap) *corev1.Volume {
 	volumeName := configMap.Name
@@ -414,87 +373,4 @@ func conditionsMatchExpected(expected, actual map[string]string) bool {
 		}
 	}
 	return reflect.DeepEqual(expected, filtered)
-}
-
-// createCertPair creates a PEM encoded CA cert, serving cert, and private key for the serving cert.
-// The use case for this is testing DNS-over-TLS where we need to install a CA in cluster DNS and a serving cert + key
-// in the upstream resolver.
-func createCertPair() (pemEncodedCA string, pemEncodedCert string, pemEncodedCertPrivateKey string, err error) {
-	// Fields common to both serving certs and CAs
-	caCert := &x509.Certificate{
-		SerialNumber: big.NewInt(2019),
-		Subject: pkix.Name{
-			CommonName:    "allowed",
-			Organization:  []string{"Red Hat Inc"},
-			Country:       []string{"US"},
-			Province:      []string{""},
-			Locality:      []string{"Raleigh"},
-			StreetAddress: []string{"100 East Davie Street"},
-			PostalCode:    []string{"27601"},
-		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().AddDate(0, 0, 7),
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-	}
-
-	servingCert := &x509.Certificate{
-		SerialNumber: big.NewInt(2019),
-		Subject: pkix.Name{
-			Organization:  []string{"Red Hat Inc"},
-			Country:       []string{"US"},
-			Province:      []string{""},
-			Locality:      []string{"Raleigh"},
-			StreetAddress: []string{"100 East Davie Street"},
-			PostalCode:    []string{"27601"},
-		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().AddDate(0, 0, 7),
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
-		SubjectKeyId: []byte{1, 2, 3, 4, 6},
-	}
-
-	caKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	certKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	rawCA, err := x509.CreateCertificate(rand.Reader, caCert, caCert, &caKey.PublicKey, caKey)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	rawCert, err := x509.CreateCertificate(rand.Reader, servingCert, caCert, &certKey.PublicKey, caKey)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	pemCA := new(bytes.Buffer)
-	pem.Encode(pemCA, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: rawCA,
-	})
-
-	pemCert := new(bytes.Buffer)
-	pem.Encode(pemCert, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: rawCert,
-	})
-
-	pemCertPrivateKey := new(bytes.Buffer)
-	pem.Encode(pemCertPrivateKey, &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(certKey),
-	})
-
-	return pemCA.String(), pemCert.String(), pemCertPrivateKey.String(), nil
 }
