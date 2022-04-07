@@ -279,29 +279,39 @@ func corefileChanged(current, expected *corev1.ConfigMap) (bool, *corev1.ConfigM
 
 func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]string, error) {
 	caBundleRevisions := make(map[string]string)
-	if dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name != "" {
-		sourceName := types.NamespacedName{
-			Namespace: GlobalUserSpecifiedConfigNamespace,
-			Name:      dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name,
+	emptyTransportConfig := operatorv1.DNSTransportConfig{}
+
+	if dns.Spec.UpstreamResolvers.TransportConfig != emptyTransportConfig {
+		if dns.Spec.UpstreamResolvers.TransportConfig.Transport == operatorv1.TLSTransport {
+			if dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name != "" {
+				sourceName := types.NamespacedName{
+					Namespace: GlobalUserSpecifiedConfigNamespace,
+					Name:      dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name,
+				}
+				cm := &corev1.ConfigMap{}
+				if err := client.Get(context.TODO(), sourceName, cm); err != nil {
+					return caBundleRevisions, err
+				}
+				caBundleRevisions[dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
+			}
 		}
-		cm := &corev1.ConfigMap{}
-		if err := client.Get(context.TODO(), sourceName, cm); err != nil {
-			return caBundleRevisions, err
-		}
-		caBundleRevisions[dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
 	}
 
 	for _, server := range dns.Spec.Servers {
-		if server.ForwardPlugin.TransportConfig.TLS.CABundle.Name != "" {
-			sourceName := types.NamespacedName{
-				Namespace: GlobalUserSpecifiedConfigNamespace,
-				Name:      server.ForwardPlugin.TransportConfig.TLS.CABundle.Name,
+		if dns.Spec.UpstreamResolvers.TransportConfig != emptyTransportConfig {
+			if server.ForwardPlugin.TransportConfig.Transport == operatorv1.TLSTransport {
+				if server.ForwardPlugin.TransportConfig.TLS.CABundle.Name != "" {
+					sourceName := types.NamespacedName{
+						Namespace: GlobalUserSpecifiedConfigNamespace,
+						Name:      server.ForwardPlugin.TransportConfig.TLS.CABundle.Name,
+					}
+					cm := &corev1.ConfigMap{}
+					if err := client.Get(context.TODO(), sourceName, cm); err != nil {
+						return caBundleRevisions, err
+					}
+					caBundleRevisions[server.ForwardPlugin.TransportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
+				}
 			}
-			cm := &corev1.ConfigMap{}
-			if err := client.Get(context.TODO(), sourceName, cm); err != nil {
-				return caBundleRevisions, err
-			}
-			caBundleRevisions[server.ForwardPlugin.TransportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
 		}
 	}
 
