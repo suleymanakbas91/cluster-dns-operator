@@ -41,7 +41,7 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
         {{- if ne .CABundle.Name "" }}
-        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
+        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/ca-bundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
         {{- else}}
         tls
         {{- end}}
@@ -81,7 +81,7 @@ var corefileTemplate = template.Must(template.New("Corefile").Funcs(template.Fun
         {{- if ne .ServerName "" }}
         tls_servername {{.ServerName}}
         {{- if ne .CABundle.Name "" }}
-        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/caBundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
+        tls /etc/pki/{{.ServerName}}-{{ index $.CABundleRevisionMap .CABundle.Name }}/ca-bundle.crt{{ printf " #%s" (index $.CABundleRevisionMap .CABundle.Name) }}
         {{- else}}
         tls
         {{- end}}

@@ -135,7 +135,7 @@ func desiredDNSDaemonSet(dns *operatorv1.DNS, coreDNSImage, kubeRBACProxyImage s
 func caBundleCMVolAndVolMount(caBundleName string, serverName string, caBundleRevisionMap map[string]string) (*corev1.Volume, *corev1.VolumeMount) {
 	caBundleConfigmapName := CABundleConfigMapName(caBundleName)
 	caBundleVolumeName := caBundleConfigmapName.Name
-	caBundleFilename := "caBundle.crt"
+	caBundleFilename := "ca-bundle.crt"
 	caBundleVolume := corev1.Volume{
 		Name: caBundleVolumeName,
 		VolumeSource: corev1.VolumeSource{

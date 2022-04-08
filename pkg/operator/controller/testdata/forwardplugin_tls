@@ -20,7 +20,7 @@ bar.com:5353 {
     prometheus 127.0.0.1:9153
     forward . 1.1.1.1 2.2.2.2:5353 {
         tls_servername dns.bar.com
-        tls /etc/pki/dns.bar.com-cacerts-2/caBundle.crt #cacerts-2
+        tls /etc/pki/dns.bar.com-cacerts-2/ca-bundle.crt #cacerts-2
         policy round_robin
     }
     errors

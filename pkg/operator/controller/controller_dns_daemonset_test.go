@@ -126,7 +126,7 @@ func TestDesiredDNSDaemonsetWithCABundleConfigMaps(t *testing.T) {
 		t.Errorf("invalid dns daemonset: %v", err)
 	} else {
 		// Validate the volumes
-		caBundleFilename := "caBundle.crt"
+		caBundleFilename := "ca-bundle.crt"
 		expectedVolumes := map[string]corev1.Volume{
 			"config-volume": {
 				Name: "config-volume",
