@@ -279,38 +279,35 @@ func corefileChanged(current, expected *corev1.ConfigMap) (bool, *corev1.ConfigM
 
 func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]string, error) {
 	caBundleRevisions := make(map[string]string)
-	emptyTransportConfig := operatorv1.DNSTransportConfig{}
 
-	if dns.Spec.UpstreamResolvers.TransportConfig != emptyTransportConfig {
-		if dns.Spec.UpstreamResolvers.TransportConfig.Transport == operatorv1.TLSTransport {
-			if dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name != "" {
+	transportConfig := dns.Spec.UpstreamResolvers.TransportConfig
+	if transportConfig.Transport == operatorv1.TLSTransport {
+		if transportConfig.TLS == nil && transportConfig.TLS.CABundle.Name != "" {
+			sourceName := types.NamespacedName{
+				Namespace: GlobalUserSpecifiedConfigNamespace,
+				Name:      transportConfig.TLS.CABundle.Name,
+			}
+			cm := &corev1.ConfigMap{}
+			if err := client.Get(context.TODO(), sourceName, cm); err != nil {
+				return caBundleRevisions, err
+			}
+			caBundleRevisions[transportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
+		}
+	}
+
+	for _, server := range dns.Spec.Servers {
+		transportConfig := server.ForwardPlugin.TransportConfig
+		if transportConfig.Transport == operatorv1.TLSTransport {
+			if transportConfig.TLS.CABundle.Name != "" {
 				sourceName := types.NamespacedName{
 					Namespace: GlobalUserSpecifiedConfigNamespace,
-					Name:      dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name,
+					Name:      transportConfig.TLS.CABundle.Name,
 				}
 				cm := &corev1.ConfigMap{}
 				if err := client.Get(context.TODO(), sourceName, cm); err != nil {
 					return caBundleRevisions, err
 				}
-				caBundleRevisions[dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
-			}
-		}
-	}
-
-	for _, server := range dns.Spec.Servers {
-		if dns.Spec.UpstreamResolvers.TransportConfig != emptyTransportConfig {
-			if server.ForwardPlugin.TransportConfig.Transport == operatorv1.TLSTransport {
-				if server.ForwardPlugin.TransportConfig.TLS.CABundle.Name != "" {
-					sourceName := types.NamespacedName{
-						Namespace: GlobalUserSpecifiedConfigNamespace,
-						Name:      server.ForwardPlugin.TransportConfig.TLS.CABundle.Name,
-					}
-					cm := &corev1.ConfigMap{}
-					if err := client.Get(context.TODO(), sourceName, cm); err != nil {
-						return caBundleRevisions, err
-					}
-					caBundleRevisions[server.ForwardPlugin.TransportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
-				}
+				caBundleRevisions[transportConfig.TLS.CABundle.Name] = fmt.Sprintf("%s-%s", cm.Name, cm.ResourceVersion)
 			}
 		}
 	}

@@ -20,12 +20,14 @@ import (
 // configmap exists, the configmap if it does exist, and an error value.
 func (r *reconciler) ensureCABundleConfigMaps(dns *operatorv1.DNS) error {
 	var configmapNames []string
-	if dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name != "" {
-		configmapNames = append(configmapNames, dns.Spec.UpstreamResolvers.TransportConfig.TLS.CABundle.Name)
+	transportConfig := dns.Spec.UpstreamResolvers.TransportConfig
+	if transportConfig.Transport == operatorv1.TLSTransport && transportConfig.TLS != nil && transportConfig.TLS.CABundle.Name != "" {
+		configmapNames = append(configmapNames, transportConfig.TLS.CABundle.Name)
 	}
 	for _, server := range dns.Spec.Servers {
-		if server.ForwardPlugin.TransportConfig.TLS.CABundle.Name != "" {
-			configmapNames = append(configmapNames, server.ForwardPlugin.TransportConfig.TLS.CABundle.Name)
+		transportConfig := server.ForwardPlugin.TransportConfig
+		if transportConfig.Transport == operatorv1.TLSTransport && transportConfig.TLS != nil && transportConfig.TLS.CABundle.Name != "" {
+			configmapNames = append(configmapNames, transportConfig.TLS.CABundle.Name)
 		}
 	}
 
