@@ -282,7 +282,7 @@ func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]
 
 	transportConfig := dns.Spec.UpstreamResolvers.TransportConfig
 	if transportConfig.Transport == operatorv1.TLSTransport {
-		if transportConfig.TLS == nil && transportConfig.TLS.CABundle.Name != "" {
+		if transportConfig.TLS != nil && transportConfig.TLS.CABundle.Name != "" {
 			sourceName := types.NamespacedName{
 				Namespace: GlobalUserSpecifiedConfigNamespace,
 				Name:      transportConfig.TLS.CABundle.Name,
@@ -298,7 +298,7 @@ func caBundleRevisionMap(client client.Client, dns *operatorv1.DNS) (map[string]
 	for _, server := range dns.Spec.Servers {
 		transportConfig := server.ForwardPlugin.TransportConfig
 		if transportConfig.Transport == operatorv1.TLSTransport {
-			if transportConfig.TLS.CABundle.Name != "" {
+			if transportConfig.TLS != nil && transportConfig.TLS.CABundle.Name != "" {
 				sourceName := types.NamespacedName{
 					Namespace: GlobalUserSpecifiedConfigNamespace,
 					Name:      transportConfig.TLS.CABundle.Name,
